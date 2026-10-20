@@ -1,0 +1,6 @@
+# 听懂（dsh-tingdong）的 dsh 插件：学习面板挂在对话页右侧栏，设置里有一个「听懂」分区。
+# 可在 profile 的 cordis.patch.yml 里给 id: dsh-tingdong 加 config：
+#   provider / model（翻译用的模型，默认跟 DSH 默认模型）、ffmpeg（路径）、threads（识别线程数）
+- insert:
+    - id: dsh-tingdong
+      name: dsh-tingdong

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="听懂">
+<meta name="theme-color" content="#f7f6f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17171a" media="(prefers-color-scheme: dark)">
+<title>听懂</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<header class="top">
+  <button class="icon-btn" id="back" hidden title="返回课程列表" aria-label="返回">‹</button>
+  <div class="brand" id="brand">听懂</div>
+  <div class="spacer"></div>
+  <a class="link" id="popout" href="panel" target="_blank" rel="noopener" hidden>新窗口打开</a>
+</header>
+<main id="app"></main>
+<audio id="player" preload="auto"></audio>
+<script type="module" src="panel.js"></script>
+</body>
+</html>

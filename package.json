@@ -1,0 +1,67 @@
+{
+  "name": "dsh-tingdong",
+  "version": "0.2.0",
+  "description": "听懂：把英文有声读物 MP3 变成听力课。本地识别每一句英文、AI 翻译讲解，再用盲听、精听、间隔复习把它练到「一听就懂」。DeepSeek Harness (dsh) 插件。",
+  "keywords": [
+    "dsh-plugin",
+    "dsh-plugins",
+    "dsh",
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "deepseek",
+    "cordis",
+    "english",
+    "listening",
+    "audiobook",
+    "speech-to-text",
+    "sensevoice",
+    "language-learning",
+    "spaced-repetition",
+    "英语听力"
+  ],
+  "license": "MIT",
+  "author": "AIcivilization",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AIcivilization/dsh-tingdong.git"
+  },
+  "homepage": "https://github.com/AIcivilization/dsh-tingdong#readme",
+  "bugs": {
+    "url": "https://github.com/AIcivilization/dsh-tingdong/issues"
+  },
+  "type": "module",
+  "main": "./plugin/index.js",
+  "exports": {
+    ".": "./plugin/index.js",
+    "./client": "./plugin/client.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-tingdong": "bin/dsh-tingdong.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "plugin",
+    "web",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "sherpa-onnx-node": "1.13.8"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./plugin/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}
