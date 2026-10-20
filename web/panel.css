@@ -297,3 +297,7 @@ textarea:focus { border-color: var(--accent); }
   .form label { padding-top: 0; }
   .week { height: 44px; }
 }
+
+/* —— 导出 —— */
+.sub-h { font-size: 13px; font-weight: 600; margin: 4px 0 2px; }
+.row.wrap { flex-wrap: wrap; }

@@ -460,6 +460,7 @@ function paneOverview(pane, l, st) {
       ${stars ? `<div class="faint" style="margin-top:6px">难句本：收藏了 ${stars} 句，在「复习」或「磨耳朵」里选「收藏」专门练。</div>` : ''}
     </div>
     ${voicesCard(l)}
+    ${zhCard(l)}
     <div class="card">
       <h3>怎么练到「一听就懂」</h3>
       <ol class="steps">
@@ -473,6 +474,7 @@ function paneOverview(pane, l, st) {
     </div>
     <div class="card"><h3>管理</h3>${manageButtons(l)}</div>`
   bindVoices(pane, l)
+  bindZh(pane, l)
   $('#goStudy').onclick = () => go(`#/l/${l.id}/study`)
   $('#goReview').onclick = () => go(`#/l/${l.id}/review`)
   $('#goDrill').onclick = () => go(`#/l/${l.id}/drill`)
@@ -555,6 +557,134 @@ function bindVoices(root, l) {
       } catch (e) { toast(e.message); b.disabled = false }
     }
   })
+}
+
+// —— 导出：中文配音（只有中文、没有背景音，每句放在对应英文的时间上）和文字（字幕 / 歌词 / 录音稿） ——
+let zhAudio = null // 试听用的独立播放器，不打扰课程的播放器
+function stopZhAudio() { if (zhAudio) { zhAudio.pause(); zhAudio = null } }
+window.addEventListener('hashchange', stopZhAudio)
+
+const TEXT_FORMATS = [['srt-bi', '双语字幕'], ['srt-en', '英文字幕'], ['srt-zh', '中文字幕'], ['lrc', '歌词 LRC'], ['script', '录音稿'], ['csv', '表格']]
+
+function zhCard(l) {
+  if (!l.sentences || !l.sentences.length) return ''
+  const meta = S.cur.tracks.zh
+  const canMake = !S.status || S.status.ffmpeg
+  const V = S.voices || {}
+  const engine = store.get('zhEngine', (meta && meta.engine) || 'kokoro')
+  const list = engine === 'edge' ? ((V.edge && V.edge.voices) || []) : ((V.zh && V.zh.voices) || [])
+  const job = S.jobs.find(j => j.lessonId === l.id && j.kind === 'track' && j.track === 'zh' && (j.state === 'running' || j.state === 'queued'))
+  const selKey = engine === 'edge' ? 'zhVoiceEdge' : 'zhVoice'
+  const sel = (meta && meta.engine === engine && meta.voice) || store.get(selKey, list[0] && list[0].id)
+  const speed = (meta && meta.speed) || store.get('zhSpeed', 1)
+  const clean = S.cur.tracks.clean
+  const align = store.get('zhAlign', (meta && meta.align) || 'full')
+  const group = (g, name) => `<optgroup label="${name}">${list.filter(x => x.gender === g).map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</optgroup>`
+  const edgeMissing = engine === 'edge' && !(V.edge && V.edge.ready)
+  const alignChips = attr => `<button class="chip ${align === 'full' ? 'on' : ''}" data-${attr}="full">原音频（${fmt(l.duration)}）</button>
+    ${clean ? `<button class="chip ${align === 'clean' ? 'on' : ''}" data-${attr}="clean">原声·去空白（${fmt(clean.duration)}）</button>` : ''}`
+  return `<div class="card" id="zhCard"><h3>导出</h3>
+    <div class="sub-h">中文配音（音频）</div>
+    <div class="faint">只有中文、没有背景音，每句中文从对应英文开始的时刻开始说；比空档长的句子会读快一点，不会挤到下一句。</div>
+    ${meta ? `<div class="row" style="margin-top:8px"><span class="badge ok">已生成</span><span class="faint grow">${esc(meta.voiceLabel || meta.voice)} · ${meta.align === 'clean' ? '对齐原声·去空白' : '对齐原音频'} · ${fmt(meta.duration)}${meta.squeezed ? ` · ${meta.squeezed} 句读快了一点` : ''}</span></div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn" id="zhPlay">▶ 试听</button>
+        <a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=zh&download=1" download>下载 MP3</a>
+      </div>` : ''}
+    ${job ? `<div class="small muted" style="margin-top:8px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : canMake ? `
+      <div class="form">
+        <label>语音</label><div class="chips">
+          <button class="chip ${engine === 'kokoro' ? 'on' : ''}" data-zhengine="kokoro">本地 Kokoro（100 种，离线）</button>
+          <button class="chip ${engine === 'edge' ? 'on' : ''}" data-zhengine="edge">微软 Edge（14 种，要联网）</button>
+        </div>
+        ${edgeMissing ? `<label></label><div><div class="faint">Edge 语音要先装一个小组件（edge-tts，约 15 MB，装在插件自己的目录里，需要电脑上有 Python 3）。用的时候中文会发到微软的服务器；这不是微软公开的正式接口，以后可能失效。</div>
+          <button class="btn" id="edgeInstall" style="margin-top:6px">安装 Edge 语音组件</button></div>` : `
+        <label>音色</label><div class="row"><select id="zhVoice">${group('f', '女声')}${group('m', '男声')}</select><button class="btn ghost" id="zhTry">试听这个音色</button></div>
+        <label>语速</label><div class="chips">${[0.9, 1, 1.1].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-zhspeed="${x}">${x === 1 ? '正常' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>
+        <label>时间对齐</label><div class="chips">${alignChips('zhalign')}</div>`}
+      </div>
+      ${edgeMissing ? '' : `<div class="faint" style="margin:6px 0 10px">对齐原音频：总长和原音频一样，可以和原音频对着听；对齐去空白：和「原声·去空白」一句对一句。${engine === 'kokoro' && !(V.zh && V.zh.ready) ? '第一次会先下载约 147 MB 中文语音模型。' : ''}${engine === 'edge' && V.edge && V.edge.version ? ` Edge 组件 ${esc(V.edge.version)}，<a href="#" class="link" id="edgeUpdate">更新</a>。` : ''}</div>
+      <button class="btn ${meta ? 'ghost' : 'primary'}" id="zhMake">${meta ? '换音色重新生成' : '生成中文配音'}</button>`}` : ''}
+    <div class="sub-h" style="margin-top:16px">文字（字幕 / 歌词 / 录音稿）</div>
+    <div class="faint">英文原文和中文对译，带时间。想自己录中文配音，就下载「录音稿」：每句标了开始时间和可用时长。</div>
+    <div class="form">
+      <label>时间按</label><div class="chips">${alignChips('txalign')}</div>
+      <label>下载</label><div class="row wrap">${TEXT_FORMATS.map(([f, name]) => `<a class="btn ghost" data-fmt="${f}" href="export?id=${encodeURIComponent(l.id)}&format=${f}&align=${align}" download>${name}</a>`).join('')}</div>
+    </div>
+  </div>`
+}
+
+function bindZh(root, l) {
+  const card = root.querySelector('#zhCard')
+  if (!card) return
+  const engine = () => store.get('zhEngine', (S.cur.tracks.zh && S.cur.tracks.zh.engine) || 'kokoro')
+  let speed = (S.cur.tracks.zh && S.cur.tracks.zh.speed) || store.get('zhSpeed', 1)
+  const rerender = () => { const box = document.createElement('div'); box.innerHTML = zhCard(l); card.replaceWith(box.firstElementChild); bindZh(root, l) }
+  card.querySelectorAll('[data-zhengine]').forEach(b => { b.onclick = () => { store.set('zhEngine', b.dataset.zhengine); stopZhAudio(); rerender() } })
+  card.querySelectorAll('[data-zhspeed]').forEach(b => {
+    b.onclick = () => { speed = Number(b.dataset.zhspeed); store.set('zhSpeed', speed); card.querySelectorAll('[data-zhspeed]').forEach(x => x.classList.toggle('on', x === b)) }
+  })
+  // 两处「时间对齐」共用一个选择
+  card.querySelectorAll('[data-zhalign],[data-txalign]').forEach(b => {
+    b.onclick = () => { store.set('zhAlign', b.dataset.zhalign || b.dataset.txalign); rerender() }
+  })
+  const voiceSel = card.querySelector('#zhVoice')
+  if (voiceSel) voiceSel.onchange = () => store.set(engine() === 'edge' ? 'zhVoiceEdge' : 'zhVoice', voiceSel.value)
+  const install = async (btn) => {
+    btn.disabled = true
+    const old = btn.textContent
+    btn.textContent = '正在安装…（第一次要一两分钟）'
+    try {
+      const r = await api('edge/install', {})
+      toast(r.ready ? `Edge 语音组件已装好（${r.version}）` : '安装没成功')
+      S.voices = null
+      await loadLesson(l.id)
+      rerender()
+    } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = old }
+  }
+  const inst = card.querySelector('#edgeInstall')
+  if (inst) inst.onclick = () => install(inst)
+  const upd = card.querySelector('#edgeUpdate')
+  if (upd) upd.onclick = e => { e.preventDefault(); install(upd) }
+  const tryBtn = card.querySelector('#zhTry')
+  if (tryBtn) tryBtn.onclick = async () => {
+    stopZhAudio()
+    player.stop()
+    tryBtn.disabled = true
+    const first = engine() === 'kokoro' && !(S.voices && S.voices.zh && S.voices.zh.ready)
+    tryBtn.textContent = first ? '第一次要下载中文语音模型，稍等…' : '正在生成试听…'
+    try {
+      const r = await fetch('voice-sample', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-tingdong': '1' }, body: JSON.stringify({ engine: engine(), voice: voiceSel.value }) })
+      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || `试听失败（${r.status}）`)
+      zhAudio = new Audio(URL.createObjectURL(await r.blob()))
+      zhAudio.play()
+      if (first && S.voices && S.voices.zh) S.voices.zh.ready = true
+    } catch (e) { toast(e.message) }
+    tryBtn.disabled = false
+    tryBtn.textContent = '试听这个音色'
+  }
+  const play = card.querySelector('#zhPlay')
+  if (play) play.onclick = () => {
+    if (zhAudio && !zhAudio.paused) { stopZhAudio(); play.textContent = '▶ 试听'; return }
+    player.stop()
+    const meta = S.cur.tracks.zh
+    const first = Math.min(...Object.values(meta.items).map(x => x[0]))
+    zhAudio = new Audio(`audio?id=${encodeURIComponent(l.id)}&track=zh&v=${meta.createdAt}`)
+    zhAudio.currentTime = Math.max(0, first - 0.3)
+    zhAudio.play().catch(() => toast('播放失败'))
+    zhAudio.onpause = () => { play.textContent = '▶ 试听' }
+    play.textContent = '❚❚ 停止'
+  }
+  const make = card.querySelector('#zhMake')
+  if (make) make.onclick = async () => {
+    make.disabled = true
+    try {
+      await api('track', { id: l.id, track: 'zh', engine: engine(), voice: voiceSel.value, speed, align: store.get('zhAlign', 'full') })
+      toast('已开始生成中文配音，进度在顶部')
+      S.jobs = (await api('jobs')).jobs
+      render()
+    } catch (e) { toast(e.message); make.disabled = false }
+  }
 }
 
 // ———————————————————— 启动 ————————————————————
