@@ -3,7 +3,7 @@
 //
 // 手写单文件 bundle，没有构建链：由 dsh web 客户端的 ModuleLoader 注入（写法照 dsh-pick）。挂两处：
 //   - 对话页右侧栏的一个页签：整个学习面板（iframe 指向宿主路由 /api-dsh-tingdong/panel）
-//   - 「设置 → 听懂」：状态（ffmpeg、识别模型、翻译模型）和用法
+//   - 「设置 → 听懂」：版本、更新、卸载，状态（ffmpeg、识别模型、翻译模型）和用法
 // 面板本身是独立调好的页面（dsh-tingdong serve 也能直接打开），这里原样复用。
 // 硬约束：界面崩了不能影响 dsh，注册一律包在 try/catch 里。
 
@@ -25,16 +25,113 @@ window.__ModuleLoader__.load({
       border: 'var(--dsw-alias-border-l3, rgba(127,127,127,.25))',
       good: '#1f9d55',
       warn: '#c98a12',
+      accent: 'var(--dsw-alias-link, #2f6bff)',
+      danger: '#c94040',
     }
 
-    function Btn({ onClick, children }) {
+    function Btn({ onClick, disabled, primary, danger, title, children }) {
       return h('button', {
-        type: 'button', onClick,
+        type: 'button', onClick, disabled, title,
         style: {
           appearance: 'none', fontFamily: 'inherit', fontSize: 12, lineHeight: '18px', padding: '2px 10px',
-          borderRadius: 6, cursor: 'pointer', border: '1px solid ' + C.border, background: 'transparent', color: C.text,
+          borderRadius: 6, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1, whiteSpace: 'nowrap',
+          border: '1px solid ' + (danger ? C.danger : primary ? C.accent : C.border),
+          background: primary ? C.accent : 'transparent',
+          color: primary ? '#fff' : danger ? C.danger : C.text,
         },
       }, children)
+    }
+
+    async function api(path, method = 'GET') {
+      const r = await fetch('/api-dsh-tingdong/' + path, {
+        method, credentials: 'same-origin',
+        headers: method === 'POST' ? { 'content-type': 'application/json', 'x-tingdong': '1' } : undefined,
+        body: method === 'POST' ? '{}' : undefined,
+      })
+      return r.json()
+    }
+
+    /** 给用户自己在终端执行的命令：等宽显示，旁边一个「复制」 */
+    function CommandLine({ command }) {
+      const [copied, setCopied] = useState(false)
+      const copy = async () => {
+        try { await navigator.clipboard.writeText(command) } catch {
+          const ta = document.createElement('textarea')
+          ta.value = command
+          ta.style.position = 'fixed'
+          ta.style.opacity = '0'
+          document.body.appendChild(ta)
+          ta.select()
+          try { document.execCommand('copy') } catch { /* 实在不行用户还能手动选 */ }
+          ta.remove()
+        }
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+      return h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' } },
+        h('code', { style: { flex: '1 1 auto', minWidth: 0, padding: '4px 8px', borderRadius: 6, fontSize: 12, color: C.text, border: '1px solid ' + C.border, userSelect: 'all', overflowWrap: 'anywhere' } }, command),
+        h(Btn, { onClick: copy }, copied ? '已复制' : '复制'))
+    }
+
+    /**
+     * 标题行：听懂 · 版本号 · 更新 ……（最右）卸载
+     * 打开设置页时自动去 npm 查新版本；更新、卸载交给 DSH 的插件管理器（宿主路由 /update、/uninstall）
+     */
+    function HeaderBar() {
+      const [info, setInfo] = useState(null)
+      const [phase, setPhase] = useState('checking') // checking | idle | updating | updated | removing | removed
+      const [confirm, setConfirm] = useState(false)
+      const [msg, setMsg] = useState(null) // { text, command?, ok? }
+      const check = (force) => {
+        setPhase('checking')
+        api('update' + (force ? '?force=1' : '')).then(j => { setInfo(j); setPhase('idle') }).catch(() => setPhase('idle'))
+      }
+      useEffect(() => { check(false) }, [])
+      const update = async () => {
+        setPhase('updating'); setMsg(null)
+        try {
+          const j = await api('update', 'POST')
+          setMsg({ text: j.message, command: j.command, ok: j.ok })
+          if (j.ok) { setPhase('updated'); return }
+        } catch (e) { setMsg({ text: '更新请求失败：' + e.message }) }
+        setPhase('idle')
+      }
+      const uninstall = async () => {
+        setConfirm(false); setPhase('removing'); setMsg(null)
+        try {
+          const j = await api('uninstall', 'POST')
+          setMsg({ text: j.message, command: j.command, ok: j.ok })
+          setPhase(j.ok ? 'removed' : 'idle')
+        } catch {
+          // 卸下插件时它自己的接口也随之消失，请求多半就是这么断的
+          setPhase('removed')
+        }
+      }
+      let upd
+      if (phase === 'updating') upd = { label: '正在更新…', disabled: true }
+      else if (phase === 'updated') upd = { label: '已更新，重启 DSH 生效', disabled: true }
+      else if (info && info.restartPending) upd = { label: `v${info.restartPending} 已装好，重启 DSH 生效`, disabled: true }
+      else if (info && info.available) upd = { label: `更新到 v${info.latest}`, primary: true, onClick: update }
+      else if (phase === 'checking') upd = { label: '检查更新…', disabled: true }
+      else upd = { label: info && info.latest ? '已是最新' : '检查更新', onClick: () => check(true), title: '点一下重新检查' }
+      const busy = phase === 'updating' || phase === 'removing' || phase === 'removed'
+      const managed = !info || info.managed !== false
+      return h('div', { style: { marginBottom: 8 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+          h('span', { style: { fontSize: 15, fontWeight: 650 } }, '听懂'),
+          info && info.running ? h('span', { style: { fontSize: 12, color: C.sub, fontVariantNumeric: 'tabular-nums' } }, 'v' + info.running) : null,
+          managed ? h(Btn, { onClick: upd.onClick, disabled: upd.disabled || busy, primary: upd.primary, title: upd.title }, upd.label) : null,
+          h('span', { style: { flex: 1 } }),
+          !managed ? null
+            : phase === 'removed' ? h('span', { style: { fontSize: 12, color: C.sub } }, '已卸载，重启 DSH 后彻底移除')
+            : phase === 'removing' ? h('span', { style: { fontSize: 12, color: C.sub } }, '正在卸载…')
+            : confirm ? h('span', { style: { display: 'inline-flex', gap: 6, alignItems: 'center' } },
+                h('span', { style: { fontSize: 12, color: C.sub } }, '确定卸载？课程和进度会保留'),
+                h(Btn, { danger: true, onClick: uninstall }, '确认卸载'),
+                h(Btn, { onClick: () => setConfirm(false) }, '取消'))
+            : h(Btn, { danger: true, disabled: busy, onClick: () => setConfirm(true) }, '卸载')),
+        msg ? h('div', { style: { fontSize: 12, color: msg.ok ? C.sub : C.danger, marginTop: 6, lineHeight: 1.6 } },
+          msg.text, msg.command ? h(CommandLine, { command: msg.command }) : null) : null)
     }
 
     /** 右侧栏：占满栏高的 iframe */
@@ -68,9 +165,7 @@ window.__ModuleLoader__.load({
         catch { setMsg('先回到一个对话，再从右侧栏打开') }
       }
       return h('div', { style: { color: C.text } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          h('span', { style: { fontSize: 15, fontWeight: 650 } }, '听懂'),
-          st && st.version ? h('span', { style: { fontSize: 12, color: C.sub } }, 'v' + st.version) : null),
+        h(HeaderBar),
         h('div', { style: { fontSize: 12.5, color: C.sub, lineHeight: 1.7, marginTop: 6 } },
           '把英文有声读物（MP3）变成听力课：本机识别每一句英文，AI 翻译讲解，再用盲听、精听、间隔复习练到一听就懂。'),
         h('div', { style: { marginTop: 14 } },
