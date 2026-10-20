@@ -98,9 +98,11 @@ async function render(soft = false) {
   const r = route()
   $('#back').hidden = r.view === 'library'
   if (!soft) { keys.handler = null; loop.on = false; clearMediaControls() }
+  $('#manage').hidden = r.view !== 'library'
   if (r.view === 'library') {
     if (!soft) player.stop()
     $('#brand').textContent = '听懂 · 英文听力'
+    if (!soft) renderManage()
     rendered = 'library'
     renderLibrary()
     // 从课程页回来：进度变了，后台重新拉一次课程列表
@@ -359,7 +361,7 @@ async function copy(text) {
 
 // ———————————————————— 一节课 ————————————————————
 
-const TABS = [['overview', '概览'], ['study', '精听'], ['review', '复习'], ['text', '连续听'], ['drill', '磨耳朵'], ['words', '词汇']]
+const TABS = [['overview', '概览'], ['study', '精听'], ['review', '复习'], ['text', '连续听'], ['drill', '磨耳朵'], ['words', '词汇'], ['export', '导出']]
 
 function renderLesson(tab) {
   const l = S.cur.lesson
@@ -381,7 +383,7 @@ function renderLesson(tab) {
     bindManage(pane, l)
     return
   }
-  ;({ overview: paneOverview, study: paneStudy, review: paneReview, text: paneText, drill: paneDrill, words: paneWords }[tab] || paneOverview)(pane, l, st)
+  ;({ overview: paneOverview, study: paneStudy, review: paneReview, text: paneText, drill: paneDrill, words: paneWords, export: paneExport }[tab] || paneOverview)(pane, l, st)
 }
 
 /** 课程页上方的「声音」选择条 */
@@ -460,7 +462,10 @@ function paneOverview(pane, l, st) {
       ${stars ? `<div class="faint" style="margin-top:6px">难句本：收藏了 ${stars} 句，在「复习」或「磨耳朵」里选「收藏」专门练。</div>` : ''}
     </div>
     ${voicesCard(l)}
-    ${zhCard(l)}
+    <div class="card row">
+      <div class="grow"><b>导出</b><div class="faint">中文配音（MP3）、双语字幕、LRC 歌词、录音稿</div></div>
+      <button class="btn" id="goExport">去导出 ›</button>
+    </div>
     <div class="card">
       <h3>怎么练到「一听就懂」</h3>
       <ol class="steps">
@@ -474,7 +479,7 @@ function paneOverview(pane, l, st) {
     </div>
     <div class="card"><h3>管理</h3>${manageButtons(l)}</div>`
   bindVoices(pane, l)
-  bindZh(pane, l)
+  $('#goExport').onclick = () => go(`#/l/${l.id}/export`)
   $('#goStudy').onclick = () => go(`#/l/${l.id}/study`)
   $('#goReview').onclick = () => go(`#/l/${l.id}/review`)
   $('#goDrill').onclick = () => go(`#/l/${l.id}/drill`)
@@ -564,6 +569,12 @@ let zhAudio = null // 试听用的独立播放器，不打扰课程的播放器
 function stopZhAudio() { if (zhAudio) { zhAudio.pause(); zhAudio = null } }
 window.addEventListener('hashchange', stopZhAudio)
 
+/** 「导出」页签 */
+function paneExport(pane, l) {
+  pane.innerHTML = zhCard(l)
+  bindZh(pane, l)
+}
+
 const TEXT_FORMATS = [['srt-bi', '双语字幕'], ['srt-en', '英文字幕'], ['srt-zh', '中文字幕'], ['lrc', '歌词 LRC'], ['script', '录音稿'], ['csv', '表格']]
 
 function zhCard(l) {
@@ -590,6 +601,7 @@ function zhCard(l) {
       <div class="row" style="margin-top:6px">
         <button class="btn" id="zhPlay">▶ 试听</button>
         <a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=zh&download=1" download>下载 MP3</a>
+        ${meta.flac ? `<a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=zh&fmt=flac&download=1" download>下载 FLAC（无损）</a>` : '<span class="faint">要 FLAC：重新生成一次</span>'}
       </div>` : ''}
     ${job ? `<div class="small muted" style="margin-top:8px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : canMake ? `
       <div class="form">
@@ -685,6 +697,70 @@ function bindZh(root, l) {
       render()
     } catch (e) { toast(e.message); make.disabled = false }
   }
+}
+
+// ———————————————————— 版本、更新、卸载（首页标题旁） ————————————————————
+// 打开首页时自动去 npm 查新版本；有就亮出「更新到 vX」，点一下交给 DSH 的插件管理器装好。
+let manageInfo = null
+let managePhase = '' // updating | updated | removing | removed
+async function renderManage(force = false) {
+  const box = $('#manage')
+  if (!manageInfo || force) {
+    try { manageInfo = await api(`update${force ? '?force=1' : ''}`) } catch { manageInfo = null }
+  }
+  const m = manageInfo
+  if (!m || !m.managed) { box.hidden = true; return }
+  box.hidden = route().view !== 'library'
+  let upd
+  if (managePhase === 'updating') upd = '<button class="btn small" disabled>正在更新…</button>'
+  else if (managePhase === 'updated' || m.restartPending) upd = `<button class="btn small" id="mRestart">v${esc(m.restartPending || m.latest)} 已装好，重启 DSH 生效</button>`
+  else if (m.available) upd = `<button class="btn small primary" id="mUpdate">更新到 v${esc(m.latest)}</button>`
+  else upd = `<button class="btn small ghost" id="mCheck" title="点一下重新检查">${m.latest ? '已是最新' : '检查更新'}</button>`
+  box.innerHTML = managePhase === 'removed' ? '<span class="faint">已卸载，重启 DSH 后移除</span>'
+    : `<span class="faint ver">v${esc(m.running)}</span>${upd}<button class="btn small ghost danger" id="mRemove" ${managePhase ? 'disabled' : ''}>卸载</button>`
+  const on = (sel, fn) => { const el = box.querySelector(sel); if (el) el.onclick = fn }
+  on('#mCheck', async () => { box.querySelector('#mCheck').textContent = '检查中…'; await renderManage(true); if (!manageInfo.available) toast(manageInfo.latest ? `已是最新版 v${manageInfo.running}` : '查不到 npm 上的版本，检查网络') })
+  on('#mRestart', () => manageNote({ message: m.restartHint }))
+  on('#mUpdate', async () => {
+    managePhase = 'updating'
+    renderManage()
+    try {
+      const r = await api('update', {})
+      managePhase = r.ok ? 'updated' : ''
+      if (r.ok) manageInfo.latest = r.version
+      manageNote(r)
+    } catch (e) { managePhase = ''; toast(e.message) }
+    renderManage()
+  })
+  on('#mRemove', async () => {
+    if (!confirm('从 DSH 卸载「听懂」插件？\n课程和学习进度会留在电脑上（~/.dsh/dsh-tingdong），重新装上就回来。')) return
+    managePhase = 'removing'
+    renderManage()
+    try {
+      const r = await api('uninstall', {})
+      managePhase = r.ok ? 'removed' : ''
+      manageNote(r)
+    } catch {
+      // 卸下插件时它自己的接口也随之消失，请求多半就是这么断的
+      managePhase = 'removed'
+    }
+    renderManage()
+  })
+}
+
+/** 更新 / 卸载的结果：一段说明，失败时附上可以自己在终端执行的命令 */
+function manageNote(r) {
+  const sheet = document.createElement('div')
+  sheet.className = 'sheet-wrap'
+  sheet.innerHTML = `<div class="sheet">
+    <div class="row"><b class="grow">${r.ok ? '完成' : r.ok === false ? '没有完成' : '提示'}</b><button class="icon-btn" data-close aria-label="关闭">×</button></div>
+    <div style="margin:8px 0;line-height:1.7">${esc(r.message || '')}</div>
+    ${r.command ? `<div class="row"><code class="cmd grow">${esc(r.command)}</code><button class="btn" id="copyCmd">复制</button></div>` : ''}
+  </div>`
+  document.body.appendChild(sheet)
+  sheet.addEventListener('click', e => { if (e.target === sheet || e.target.closest('[data-close]')) sheet.remove() })
+  const c = sheet.querySelector('#copyCmd')
+  if (c) c.onclick = () => copy(r.command)
 }
 
 // ———————————————————— 启动 ————————————————————

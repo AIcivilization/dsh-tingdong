@@ -301,3 +301,10 @@ textarea:focus { border-color: var(--accent); }
 /* —— 导出 —— */
 .sub-h { font-size: 13px; font-weight: 600; margin: 4px 0 2px; }
 .row.wrap { flex-wrap: wrap; }
+
+/* —— 标题旁的版本、更新、卸载 —— */
+.manage { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; flex-wrap: wrap; }
+.manage .ver { font-variant-numeric: tabular-nums; }
+.btn.small { padding: 2px 9px; font-size: 12px; line-height: 18px; }
+code.cmd { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; user-select: all; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .btn.small { padding: 4px 10px; font-size: 13px; } .top { flex-wrap: wrap; } }

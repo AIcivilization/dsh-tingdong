@@ -10,7 +10,7 @@ const home = await mkdtemp(join(tmpdir(), 'tingdong-tracks-'))
 process.env.DSH_TINGDONG_HOME = home
 after(() => rm(home, { recursive: true, force: true }))
 
-const { parseWav, trimSilence, RATE } = await import('../lib/pcm.js')
+const { createEncoder, parseWav, trimSilence, RATE } = await import('../lib/pcm.js')
 const { buildTrack, listTracks } = await import('../lib/tracks.js')
 const { findFfmpeg } = await import('../lib/paths.js')
 
@@ -73,4 +73,19 @@ test('原声·去空白：只留讲话，句间固定停顿，时间表对得上
   assert.ok((await stat(join(dir, 'tracks', 'clean.mp3'))).size > 1000)
   assert.deepEqual(Object.keys(await listTracks(id)), ['clean'])
   await assert.rejects(buildTrack(lesson, 'full'), /没有这种声音/)
+})
+
+test('编码器同时出 MP3 和无损 FLAC（44.1 kHz / 16 位），时间表按停顿走', { skip: !ffmpeg && '没有 ffmpeg' }, async () => {
+  const out = join(home, 'both.mp3')
+  const flac = join(home, 'both.flac')
+  const enc = createEncoder({ ffmpeg, out, flac, gap: 0 })
+  await enc.pad(1)
+  const span = await enc.write(7, new Float32Array(RATE).fill(0.1))
+  assert.deepEqual(span, [1, 2])
+  const r = await enc.finish()
+  assert.equal(r.duration, 2.5)
+  const probe = spawnSync(ffmpeg, ['-hide_banner', '-i', flac], { encoding: 'utf8' }).stderr
+  assert.match(probe, /flac, 44100 Hz, mono, s16/)
+  assert.match(probe, /Duration: 00:00:02\.50/)
+  assert.ok((await stat(out)).size > 0)
 })

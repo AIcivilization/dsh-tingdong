@@ -21,6 +21,7 @@ import { Importer } from '../lib/importer.js'
 import { dshLlm } from '../lib/llm.js'
 import { createHandler } from '../lib/server.js'
 import { registerTools } from './tools.js'
+import { createManager } from './manage.js'
 
 const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
 export const PREFIX = '/api-dsh-tingdong'
@@ -77,7 +78,20 @@ export function apply(ctx, config = {}) {
   if (typeof ctx.effect === 'function') ctx.effect(() => stopAll)
   else if (typeof ctx.on === 'function') ctx.on('dispose', stopAll)
 
+  // DSH 自己的插件管理器（更新 / 卸载按钮用；老版本 DSH 没有）
+  let pluginManager
+  ctx.inject(['pluginManager'], (c) => {
+    c.effect(() => {
+      pluginManager = c.pluginManager || (c.get && c.get('pluginManager'))
+      return () => { pluginManager = undefined }
+    })
+  })
+  let profile
+  try { profile = ctx.get && ctx.get('profileContext') && ctx.get('profileContext').name } catch { profile = undefined }
+  const manage = createManager({ pkgRoot: PKG_ROOT, pluginManager: () => pluginManager, profile: () => profile })
+
   const handle = createHandler({
+    manage,
     prefix: PREFIX,
     pkgRoot: PKG_ROOT,
     importer,
