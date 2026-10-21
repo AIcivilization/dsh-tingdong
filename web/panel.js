@@ -233,72 +233,111 @@ function newAudioPanel(box) {
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles([...e.dataTransfer.files]) }
 }
 
-let docHelp = null
-async function newDocPanel(box) {
-  box.innerHTML = '<div class="card"><div class="faint">…</div></div>'
-  try {
-    if (!docHelp) docHelp = await api('doc-help')
-    if (!S.voices) S.voices = await api('voices')
-  } catch (e) { box.innerHTML = `<div class="card small" style="color:var(--bad)">${esc(e.message)}</div>`; return }
-  const V = S.voices
+// —— 导入文档：选文件 → 取出文字、预估 → 确认（提示会用 AI 整理）→ 后台整理、存档、分课、朗读、翻译 ——
+let pendingDoc = null // 已经读出文字、等确认的文档
+function newDocPanel(box) {
+  if (pendingDoc) return docConfirm(box, pendingDoc)
+  box.innerHTML = `<div class="card">
+    <h3>导入英文文档</h3>
+    <div class="drop" id="docDrop">
+      <div class="new-ico">📄</div>
+      <div><b>把文档拖到这里</b>，或 <a href="#" class="link" id="docPick">选择文件</a></div>
+      <div class="faint" style="margin-top:4px">PDF、Word（.docx）、EPUB 电子书、网页（.html）、TXT、Markdown · 最大 100 MB · 约 6 万词以内</div>
+      <input type="file" id="docFile" accept=".pdf,.docx,.epub,.html,.htm,.txt,.md,.markdown" hidden>
+    </div>
+    <div class="faint" style="margin-top:8px">导入后先让你确认：AI 会把文字整理好（去掉页眉页码、修好断行、分好章节，原文不改），再朗读成音频、逐句翻译讲解。</div>
+    <details style="margin-top:8px"><summary class="link">没有文件？直接粘贴英文</summary>
+      <textarea id="docText" rows="6" placeholder="把英文文章粘贴到这里"></textarea>
+      <button class="btn" id="docPaste" style="margin-top:6px">下一步</button>
+    </details>
+    <div id="docBusy"></div>
+  </div>`
+  const busy = msg => { $('#docBusy').innerHTML = msg ? `<div class="faint" style="margin-top:8px">${msg}</div>` : '' }
+  const got = doc => { pendingDoc = doc; docConfirm(box, doc) }
+  const upload = f => {
+    if (!f) return
+    if (!/\.(pdf|docx|epub|html?|txt|md|markdown)$/i.test(f.name)) return toast('不支持这种文件：可以导入 PDF、Word、EPUB、网页、TXT、Markdown')
+    if (f.size > 100 * 1024 * 1024) return toast('文件太大（最多 100 MB）')
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `doc/upload?name=${encodeURIComponent(f.name)}`)
+    xhr.setRequestHeader('content-type', 'application/octet-stream')
+    xhr.setRequestHeader('x-tingdong', '1')
+    xhr.upload.onprogress = e => { if (e.lengthComputable) busy(`正在上传 ${esc(f.name)}… ${Math.round(e.loaded / e.total * 100)}%`) }
+    xhr.upload.onload = () => busy(`正在读取 ${esc(f.name)} 里的文字…`)
+    xhr.onload = () => {
+      let j = {}
+      try { j = JSON.parse(xhr.responseText) } catch { /* 忽略 */ }
+      busy('')
+      if (xhr.status >= 400 || !j.doc) return toast(j.error || '读取失败')
+      got(j.doc)
+    }
+    xhr.onerror = () => { busy(''); toast('上传失败') }
+    busy(`正在上传 ${esc(f.name)}…`)
+    xhr.send(f)
+  }
+  $('#docPick').onclick = e => { e.preventDefault(); $('#docFile').click() }
+  $('#docFile').onchange = e => upload(e.target.files[0])
+  const drop = $('#docDrop')
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over') }
+  drop.ondragleave = () => drop.classList.remove('over')
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); upload(e.dataTransfer.files[0]) }
+  $('#docPaste').onclick = async () => {
+    const text = $('#docText').value
+    if (!text.trim()) return toast('先粘贴英文')
+    busy('正在读取…')
+    try { got((await api('doc/text', { text })).doc) } catch (e) { toast(e.message) }
+    busy('')
+  }
+}
+
+/** 确认卡片：读到了什么、AI 会做什么、预计多久，选朗读的声音，确定后开始 */
+async function docConfirm(box, doc) {
+  try { if (!S.voices) S.voices = await api('voices') } catch { /* 下面按没装 Edge 处理 */ }
+  const V = S.voices || {}
   const edgeReady = V.edge && V.edge.ready
   const engine = store.get('docEngine', 'edge')
   const list = engine === 'edge' ? ((V.edge && V.edge.en) || []) : ((V.kokoro && V.kokoro.voices) || []).map(v => ({ ...v, gender: v.id[1] === 'm' ? 'm' : 'f' }))
   const voice = store.get(engine === 'edge' ? 'docVoiceEdge' : 'docVoiceKokoro', engine === 'edge' ? 'en-US-AndrewNeural' : 'am_michael')
   const speed = store.get('docSpeed', 1)
   const group = (g, name) => `<optgroup label="${name}">${list.filter(x => x.gender === g).map(x => `<option value="${esc(x.id)}" ${x.id === voice ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</optgroup>`
-  box.innerHTML = `<div class="card doc-new">
-    <h3>导入英文文档</h3>
-    <div class="step"><span class="num">1</span><div class="grow">
-      <b>先让 AI 把材料整理好</b>
-      <div class="faint">PDF、电子书、网页都行：把下面这段话连同材料一起发给 ChatGPT、DeepSeek、Kimi 等，它会整理成能直接导入的英文文字（只留正文、修好断行、按章节分好）。扫描版 PDF 也可以，让它先识别文字。</div>
-      ${S.status && S.status.host === 'dsh' ? '<div class="faint" style="margin-top:4px">💡 更省事：在 DSH 的对话里把 PDF 发给 AI，说「按听懂的格式整理后导入听懂」，它会整理好直接导入，不用复制粘贴。</div>' : ''}
-      <details style="margin-top:6px"><summary class="link">查看整理要求</summary><pre class="prompt">${esc(docHelp.prompt)}</pre></details>
-      <button class="btn" id="copyPrompt" style="margin-top:6px">复制整理要求</button>
-    </div></div>
-    <div class="step"><span class="num">2</span><div class="grow">
-      <b>把整理好的文字粘贴进来</b>
-      <textarea id="docText" rows="8" placeholder="# 第一章标题&#10;&#10;First paragraph of the chapter...&#10;&#10;Second paragraph...&#10;&#10;# 第二章标题&#10;&#10;..."></textarea>
-      <div class="row" style="margin-top:4px">
-        <span class="faint grow" id="docCount">每个「# 标题」开始一课；没有标题就整篇一课</span>
-        <a href="#" class="link" id="docPick">或选择 .txt / .md 文件</a>
-        <input type="file" id="docFile" accept=".txt,.md,.markdown,text/plain,text/markdown" hidden>
-      </div>
-      <input type="text" id="docTitle" placeholder="文档标题（可不填，用第一章的标题）" style="margin-top:6px">
-    </div></div>
-    <div class="step"><span class="num">3</span><div class="grow">
-      <b>选朗读的声音</b>
-      <div class="chips" style="margin-top:4px">
+  const e = doc.estimate
+  const blocked = engine === 'edge' && !edgeReady
+  box.innerHTML = `<div class="card doc-confirm">
+    <h3>确认导入</h3>
+    <div class="row"><span class="new-ico">📄</span><div class="grow"><b>${esc(doc.name)}</b>
+      <div class="faint">${esc(doc.type)}${doc.pages ? ` · ${doc.pages} 页` : ''} · 约 ${e.words.toLocaleString()} 个英文单词</div></div></div>
+    <details style="margin-top:6px"><summary class="link">看看读到的文字</summary><pre class="prompt">${esc(doc.preview)}${doc.preview.length >= 600 ? '…' : ''}</pre></details>
+    <div class="ai-note">
+      ${doc.needsCleanup
+        ? (doc.hasModel
+          ? `🤖 <b>会用 AI 整理文字</b>（${esc(doc.model)}）：去掉页眉页码和目录、修好断行、分好章节。只整理格式，原文一个字都不改，不翻译。整理好的文字会存档，随时能下载。`
+          : '⚠ 没有可用的大模型：只能简单接好断行，页眉页码可能留下。配好 DSH 的默认模型再导入效果更好。')
+        : '✓ 已经是整理好的格式（有「# 章节」），不用 AI 整理。'}
+    </div>
+    <div class="est">
+      <div><b>${e.lessons}</b><span>约几课</span></div>
+      <div><b>${e.audioMinutes}</b><span>朗读分钟</span></div>
+      <div><b>${e.minutes}</b><span>处理分钟</span></div>
+      <div><b>${e.tokens >= 10000 ? (e.tokens / 10000).toFixed(1) + '万' : e.tokens.toLocaleString()}</b><span>模型 token</span></div>
+    </div>
+    <div class="faint">处理时间取决于模型速度，都在后台进行；分好的课做好一课就能先学一课。${e.words > 20000 ? '这份比较长，可以先导入其中一部分试试。' : ''}</div>
+    <div class="form">
+      <label>标题</label><input type="text" id="docTitle" value="${esc(doc.title || '')}" placeholder="文档标题">
+      <label>朗读</label><div class="chips">
         <button class="chip ${engine === 'edge' ? 'on' : ''}" data-docengine="edge">微软 Edge（最自然，要联网）</button>
         <button class="chip ${engine === 'kokoro' ? 'on' : ''}" data-docengine="kokoro">Kokoro（离线）</button>
       </div>
-      ${engine === 'edge' && !edgeReady ? `<div class="faint">Edge 语音要先装一个小组件（edge-tts，约 15 MB，装在插件自己的目录里，需要电脑上有 Python 3）。文字会发到微软的服务器朗读。</div>
-        <button class="btn" id="docEdgeInstall" style="margin-top:6px">安装 Edge 语音组件</button>` : `
-        <div class="row" style="margin-top:4px"><select id="docVoice">${group('m', '男声')}${group('f', '女声')}</select></div>
-        <div class="chips" style="margin-top:6px">${[0.85, 1, 1.15].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-docspeed="${x}">${x === 1 ? '正常语速' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>`}
-    </div></div>
-    <button class="btn primary big" id="docGo" ${engine === 'edge' && !edgeReady ? 'disabled' : ''}>开始导入</button>
+      ${blocked ? `<label></label><div><div class="faint">Edge 语音要先装一个小组件（edge-tts，约 15 MB，装在插件自己的目录里，需要电脑上有 Python 3）。朗读时文字会发到微软的服务器。</div>
+        <button class="btn" id="docEdgeInstall" style="margin-top:6px">安装 Edge 语音组件</button></div>` : `
+      <label>声音</label><select id="docVoice">${group('m', '男声')}${group('f', '女声')}</select>
+      <label>语速</label><div class="chips">${[0.85, 1, 1.15].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-docspeed="${x}">${x === 1 ? '正常' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>`}
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary big" id="docGo" ${blocked ? 'disabled' : ''}>确定，开始导入</button>
+      <button class="btn ghost" id="docCancel">取消</button>
+    </div>
   </div>`
-  const ta = $('#docText')
-  ta.value = store.get('docDraft', '')
-  const count = () => {
-    const t = ta.value
-    const chapters = (t.match(/^#\s+\S/gm) || []).length
-    const words = (t.match(/[A-Za-z']+/g) || []).length
-    $('#docCount').textContent = t.trim() ? `${words.toLocaleString()} 个英文单词 · ${chapters ? `${chapters} 章（每章一课）` : '没有「# 标题」：整篇一课'}` : '每个「# 标题」开始一课；没有标题就整篇一课'
-  }
-  ta.oninput = () => { count(); try { store.set('docDraft', ta.value.slice(0, 200000)) } catch { /* 太大就不存草稿 */ } }
-  count()
-  $('#copyPrompt').onclick = () => copy(docHelp.prompt)
-  $('#docPick').onclick = e => { e.preventDefault(); $('#docFile').click() }
-  $('#docFile').onchange = async e => {
-    const f = e.target.files[0]
-    if (!f) return
-    ta.value = await f.text()
-    if (!$('#docTitle').value) $('#docTitle').value = f.name.replace(/\.(txt|md|markdown)$/i, '')
-    ta.oninput()
-  }
-  box.querySelectorAll('[data-docengine]').forEach(b => { b.onclick = () => { store.set('docEngine', b.dataset.docengine); newDocPanel(box) } })
+  box.querySelectorAll('[data-docengine]').forEach(b => { b.onclick = () => { store.set('docEngine', b.dataset.docengine); docConfirm(box, doc) } })
   box.querySelectorAll('[data-docspeed]').forEach(b => {
     b.onclick = () => { store.set('docSpeed', Number(b.dataset.docspeed)); box.querySelectorAll('[data-docspeed]').forEach(x => x.classList.toggle('on', x === b)) }
   })
@@ -312,22 +351,24 @@ async function newDocPanel(box) {
       const r = await api('edge/install', {})
       toast(r.ready ? `Edge 语音组件已装好（${r.version}）` : '安装没成功')
       S.voices = null
-      newDocPanel(box)
-    } catch (e) { toast(e.message); inst.disabled = false; inst.textContent = '安装 Edge 语音组件' }
+      docConfirm(box, doc)
+    } catch (err) { toast(err.message); inst.disabled = false; inst.textContent = '安装 Edge 语音组件' }
+  }
+  $('#docCancel').onclick = async () => {
+    pendingDoc = null
+    api('doc/cancel', { docId: doc.docId }).catch(() => {})
+    newDocPanel(box)
   }
   $('#docGo').onclick = async () => {
     const btn = $('#docGo')
     btn.disabled = true
     try {
-      const r = await api('import-doc', { text: ta.value, title: $('#docTitle').value.trim(), engine, voice: vs ? vs.value : undefined, speed: store.get('docSpeed', 1) })
-      const fresh = r.items.filter(x => !x.existed)
-      toast(fresh.length ? `《${r.title}》分成 ${r.items.length} 课，正在朗读和翻译` : '这份文档导入过了')
-      store.set('docDraft', '')
-      ta.value = ''
-      count()
+      await api('doc/confirm', { docId: doc.docId, title: $('#docTitle').value.trim(), engine, voice: vs ? vs.value : undefined, speed: store.get('docSpeed', 1) })
+      toast(doc.needsCleanup && doc.hasModel ? '开始了：AI 整理 → 分课 → 朗读 → 翻译，进度在下面' : '开始了：分课 → 朗读 → 翻译，进度在下面')
+      pendingDoc = null
+      newDocPanel(box)
       pollJobsNow()
-    } catch (e) { toast(e.message) }
-    btn.disabled = false
+    } catch (err) { toast(err.message); btn.disabled = false }
   }
 }
 
@@ -572,6 +613,7 @@ function paneOverview(pane, l, st) {
     <div class="card">
       ${l.titleZh ? `<div style="font-weight:600">${esc(l.titleZh)}</div><div class="faint">${esc(l.title)}</div>` : `<div style="font-weight:600">${esc(l.title)}</div>`}
       <div class="faint" style="margin-top:2px">${l.kind === 'doc' ? `文档 · 朗读：${esc(l.voiceLabel || 'AI')} · ` : ''}${fmtDur(l.duration)} · ${l.sentences.length} 句${l.model ? ` · 翻译：${esc(l.model)}` : ''}</div>
+      ${l.source && l.source.docId ? `<div class="faint" style="margin-top:2px">原文档：${esc(l.source.name)} · <a class="link" href="doc/file?id=${l.source.docId}&which=original" download>下载原文件</a> · <a class="link" href="doc/file?id=${l.source.docId}&which=clean" download>整理后的文字</a></div>` : ''}
       ${l.summaryZh ? `<p class="summary">${esc(l.summaryZh)}</p>` : ''}
       ${l.note ? `<div class="small" style="color:var(--mid)">${esc(l.note)}</div>` : ''}
       ${l.status === 'error' ? `<div class="small" style="color:var(--bad)">${esc(l.error)}</div>` : ''}

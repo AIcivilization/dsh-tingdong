@@ -1,6 +1,6 @@
 {
   "name": "dsh-tingdong",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "听懂：把英文有声读物（MP3）或英文文档变成听力课。本地识别 / AI 朗读每一句英文、AI 翻译讲解，再用盲听、精听、间隔复习把它练到「一听就懂」。DeepSeek Harness (dsh) 插件。",
   "keywords": [
     "dsh-plugin",
@@ -54,7 +54,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "sherpa-onnx-node": "1.13.8"
+    "sherpa-onnx-node": "1.13.8",
+    "unpdf": "1.9.1"
   },
   "dsh": {
     "bundle": {

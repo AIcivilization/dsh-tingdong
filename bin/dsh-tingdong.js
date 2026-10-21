@@ -4,7 +4,7 @@
 //   dsh-tingdong import <文件或文件夹> [--title 标题]   识别 + 翻译，做成课
 //   dsh-tingdong serve [--port 4810]                    在浏览器里打开学习面板
 //   dsh-tingdong list                                   看有哪些课
-//   dsh-tingdong import-doc <整理好的 .txt / .md>        导入英文文档（# 章节 分课），Edge 朗读 + 翻译
+//   dsh-tingdong import-doc <文档>                       导入英文文档：AI 整理 → 分课 → Edge 朗读 + 翻译
 //   dsh-tingdong voices <课程id|all> [--track clean,cleannr,say,kokoro] [--voice 名字] [--speed 0.9]
 //                                                       生成声音轨（去空白原声 / 压背景 / 系统朗读 / Kokoro）
 //
@@ -52,9 +52,7 @@ async function main() {
   }
 
   if (cmd === 'import-doc') {
-    if (!rest[0]) throw new Error('用法：dsh-tingdong import-doc <整理好的 .txt / .md> [--title 标题] [--voice en-US-AndrewNeural] [--engine edge|kokoro]')
-    const { readFile } = await import('node:fs/promises')
-    const text = await readFile(rest[0], 'utf8')
+    if (!rest[0]) throw new Error('用法：dsh-tingdong import-doc <PDF / Word / EPUB / 网页 / TXT / MD> [--title 标题] [--voice en-US-AndrewNeural] [--engine edge|kokoro]')
     const llm = await cliLlm(flags)
     console.log(llm ? `翻译模型：${llm.label()}（${llm.via}）` : '没有可用的大模型：只朗读英文')
     const importer = new Importer({ llm: () => llm, options, log: m => console.error(m) })
@@ -66,8 +64,12 @@ async function main() {
         if (key !== last) { last = key; console.log(`${j.title}：${j.stage}${j.total ? ` ${j.done}/${j.total}` : ''}`) }
       }
     })
-    const r = await importer.importDoc(text, { title: typeof flags.title === 'string' ? flags.title : '', engine: flags.engine === 'kokoro' ? 'kokoro' : 'edge', voice: typeof flags.voice === 'string' ? flags.voice : undefined })
-    console.log(`《${r.title}》分成 ${r.items.length} 课：${r.items.map(x => `${x.title}（${x.sentences || '已有'} 句）`).join('、')}`)
+    // 和界面一样：取出文字、预估 → 确认 → AI 整理、存档 → 分课 → 朗读、翻译
+    const { basename } = await import('node:path')
+    const doc = await importer.prepareDoc(rest[0], { name: basename(rest[0]) })
+    const e = doc.estimate
+    console.log(`${doc.name}：${doc.type}${doc.pages ? ` ${doc.pages} 页` : ''}，约 ${e.words} 词 → 约 ${e.lessons} 课，朗读约 ${e.audioMinutes} 分钟，处理约 ${e.minutes} 分钟，约 ${e.tokens} token；${doc.needsCleanup ? 'AI 整理' : '已是整理好的格式'}`)
+    await importer.confirmDoc(doc.docId, { title: typeof flags.title === 'string' ? flags.title : doc.title, engine: flags.engine === 'kokoro' ? 'kokoro' : 'edge', voice: typeof flags.voice === 'string' ? flags.voice : undefined })
     await new Promise(resolve => {
       const check = () => { if (!importer.running && !importer.jobs.some(j => j.state === 'queued')) resolve() }
       importer.onChange(() => setImmediate(check))
@@ -159,7 +161,7 @@ async function main() {
   dsh-tingdong import <文件或文件夹> [--title 标题]
   dsh-tingdong serve [--port 4810]
   dsh-tingdong list
-  dsh-tingdong import-doc <整理好的 .txt / .md> [--title 标题] [--voice en-US-AndrewNeural]
+  dsh-tingdong import-doc <PDF / Word / EPUB / 网页 / TXT / MD> [--title 标题] [--voice en-US-AndrewNeural]
   dsh-tingdong voices <课程id|all> [--track clean,cleannr,say,kokoro] [--voice 名字] [--speed 0.9]
 
   模型：--base-url URL --api-key KEY --model ID（或 TINGDONG_BASE_URL / TINGDONG_API_KEY / TINGDONG_MODEL）

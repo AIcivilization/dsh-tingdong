@@ -333,3 +333,13 @@ code.cmd { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6
 .kind { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; margin-right: 6px; vertical-align: 1px; background: var(--accent-soft); color: var(--accent); }
 .kind.doc { background: rgba(201, 138, 18, .14); color: var(--mid); }
 @media (max-width: 640px) { .new-grid { grid-template-columns: 1fr; } }
+
+/* —— 导入文档：确认 —— */
+#docDrop { padding: 22px 14px; }
+#docDrop .new-ico { font-size: 28px; }
+.doc-confirm .ai-note { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); line-height: 1.6; font-size: 13px; }
+.doc-confirm .est { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; margin: 6px 0 8px; }
+.doc-confirm .est b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.doc-confirm .est span { font-size: 11px; color: var(--sub); }
+.doc-confirm .form input[type=text] { margin: 0; }
+@media (max-width: 380px) { .doc-confirm .est { grid-template-columns: repeat(2, 1fr); } }
