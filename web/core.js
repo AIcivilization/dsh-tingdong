@@ -184,7 +184,9 @@ export function useTrack(t) {
   loadAudio()
 }
 
-export const trackLabel = t => (S.cur.trackDefs[t] && S.cur.trackDefs[t].label) || t
+export const isDoc = (c = S.cur) => Boolean(c && c.lesson.kind === 'doc')
+/** 声音的名字；文档课的「原声」其实是导入时的朗读 */
+export const trackLabel = t => (t === 'full' && isDoc() ? `朗读（${S.cur.lesson.voiceLabel || 'AI'}）` : (S.cur.trackDefs[t] && S.cur.trackDefs[t].label) || t)
 
 /** 学到第几句：存服务器（防抖），换设备接着学 */
 let posTimer

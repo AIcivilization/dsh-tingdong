@@ -7,6 +7,8 @@
 
 import { isMastered } from '../lib/srs.js'
 import { checkId, getLesson, getProgress, listLessons } from '../lib/store.js'
+import { PREP_PROMPT } from '../lib/doc.js'
+import { EDGE_EN_VOICES } from '../lib/edge.js'
 
 const ANY_OBJECT = { type: 'object' }
 
@@ -59,6 +61,33 @@ export async function buildToolDefinitions({ importer }) {
       async execute(args) {
         const items = await importer.importPath(String(args.path || ''), { title: typeof args.title === 'string' ? args.title : '' })
         return plain({ items })
+      },
+    },
+
+    {
+      name: 'tingdong_import_text',
+      description: '把一篇英文文档导入「听懂」做成听力课：AI 朗读成音频，再逐句翻译讲解。用户给了 PDF、网页、电子书或一段英文，想用来练听力时用。' +
+        '调用前先把材料整理好：' + PREP_PROMPT.split('\n').slice(1, 4).join(' '),
+      parameters: params({
+        text: { type: 'string', required: true, description: '整理好的英文纯文本：每章一行「# 章节标题」开头（每章做成一课），段落之间空一行，只留正文、原文不改不译' },
+        title: { type: 'string', description: '文档标题（可省略）' },
+        voice: { type: 'string', enum: EDGE_EN_VOICES.map(v => v.id), description: '朗读的声音（微软 Edge），默认 en-US-AndrewNeural（美式男声）' },
+      }),
+      output: {
+        schema: ANY_OBJECT,
+        render: (_a, v) => [{
+          type: 'text',
+          text: `《${v.title}》分成 ${v.items.length} 课：${v.items.map(it => `${it.title}${it.existed ? '（已导入过）' : `（${it.sentences} 句）`}`).join('、')}。` +
+            `正在后台朗读和翻译，几分钟后就能学。${OPEN_HINT}`,
+        }],
+      },
+      async execute(args) {
+        const r = await importer.importDoc(String(args.text || ''), {
+          title: typeof args.title === 'string' ? args.title : '',
+          engine: 'edge',
+          voice: typeof args.voice === 'string' ? args.voice : undefined,
+        })
+        return plain(r)
       },
     },
 

@@ -66,12 +66,12 @@ after(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-test('挂一个前缀路由，注册 3 个工具', () => {
+test('挂一个前缀路由，注册 4 个工具', () => {
   const routes = ctx.services.webServer.routes
   assert.equal(routes.length, 1)
   assert.equal(routes[0].kind, 'prefix')
   assert.equal(routes[0].path, '/api-dsh-tingdong')
-  assert.deepEqual(ctx.services.tools.defs.map(d => d.name), ['tingdong_import', 'tingdong_lessons', 'tingdong_sentences'])
+  assert.deepEqual(ctx.services.tools.defs.map(d => d.name), ['tingdong_import', 'tingdong_import_text', 'tingdong_lessons', 'tingdong_sentences'])
 })
 
 test('没过 DSH 登录校验的请求原样拒绝', async () => {

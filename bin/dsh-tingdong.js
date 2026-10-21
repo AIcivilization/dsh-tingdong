@@ -4,6 +4,7 @@
 //   dsh-tingdong import <文件或文件夹> [--title 标题]   识别 + 翻译，做成课
 //   dsh-tingdong serve [--port 4810]                    在浏览器里打开学习面板
 //   dsh-tingdong list                                   看有哪些课
+//   dsh-tingdong import-doc <整理好的 .txt / .md>        导入英文文档（# 章节 分课），Edge 朗读 + 翻译
 //   dsh-tingdong voices <课程id|all> [--track clean,cleannr,say,kokoro] [--voice 名字] [--speed 0.9]
 //                                                       生成声音轨（去空白原声 / 压背景 / 系统朗读 / Kokoro）
 //
@@ -47,6 +48,32 @@ async function main() {
       const s = l.stats
       console.log(`${l.id}  ${l.titleZh || l.title}  [${l.status}]  ${fmtTime(l.duration)}  ${l.sentences} 句  掌握 ${s.mastered}/${s.total}  待复习 ${s.due}`)
     }
+    return
+  }
+
+  if (cmd === 'import-doc') {
+    if (!rest[0]) throw new Error('用法：dsh-tingdong import-doc <整理好的 .txt / .md> [--title 标题] [--voice en-US-AndrewNeural] [--engine edge|kokoro]')
+    const { readFile } = await import('node:fs/promises')
+    const text = await readFile(rest[0], 'utf8')
+    const llm = await cliLlm(flags)
+    console.log(llm ? `翻译模型：${llm.label()}（${llm.via}）` : '没有可用的大模型：只朗读英文')
+    const importer = new Importer({ llm: () => llm, options, log: m => console.error(m) })
+    let last = ''
+    importer.onChange(() => {
+      for (const j of importer.list()) {
+        if (j.state !== 'running') continue
+        const key = `${j.id}|${j.stage}|${j.total ? Math.floor(j.done / j.total * 4) : 0}`
+        if (key !== last) { last = key; console.log(`${j.title}：${j.stage}${j.total ? ` ${j.done}/${j.total}` : ''}`) }
+      }
+    })
+    const r = await importer.importDoc(text, { title: typeof flags.title === 'string' ? flags.title : '', engine: flags.engine === 'kokoro' ? 'kokoro' : 'edge', voice: typeof flags.voice === 'string' ? flags.voice : undefined })
+    console.log(`《${r.title}》分成 ${r.items.length} 课：${r.items.map(x => `${x.title}（${x.sentences || '已有'} 句）`).join('、')}`)
+    await new Promise(resolve => {
+      const check = () => { if (!importer.running && !importer.jobs.some(j => j.state === 'queued')) resolve() }
+      importer.onChange(() => setImmediate(check))
+      check()
+    })
+    for (const j of importer.list()) console.log(`${j.state === 'done' ? '✓' : '✗'} ${j.title}${j.error ? '：' + j.error : ''}`)
     return
   }
 
@@ -132,6 +159,7 @@ async function main() {
   dsh-tingdong import <文件或文件夹> [--title 标题]
   dsh-tingdong serve [--port 4810]
   dsh-tingdong list
+  dsh-tingdong import-doc <整理好的 .txt / .md> [--title 标题] [--voice en-US-AndrewNeural]
   dsh-tingdong voices <课程id|all> [--track clean,cleannr,say,kokoro] [--voice 名字] [--speed 0.9]
 
   模型：--base-url URL --api-key KEY --model ID（或 TINGDONG_BASE_URL / TINGDONG_API_KEY / TINGDONG_MODEL）

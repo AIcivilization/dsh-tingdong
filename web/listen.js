@@ -1,7 +1,7 @@
 // web/listen.js — 连续听、磨耳朵、词汇
 
 import {
-  $, api, audio, clearMediaControls, curTrack, esc, fmt, getPos, keys, mediaControls, player, playSentence, S, store, tm,
+  $, api, audio, clearMediaControls, curTrack, esc, fmt, getPos, isDoc, keys, mediaControls, player, playSentence, S, store, tm,
   toast, trackLabel, usable,
 } from './core.js'
 
@@ -17,10 +17,10 @@ export function paneText(pane, l) {
       <button class="btn primary" id="playAll">▶ 连续播放</button>
       <button class="btn ${opt.en ? 'on' : ''}" id="tEn">英文</button>
       <button class="btn ${opt.zh ? 'on' : ''}" id="tZh">中文</button>
-      ${full ? `<button class="btn ${opt.skip ? 'on' : ''}" id="tSkip" title="跳过句子之间较长的空白和音乐">跳过空白</button>` : ''}
+      ${full && !isDoc() ? `<button class="btn ${opt.skip ? 'on' : ''}" id="tSkip" title="跳过句子之间较长的空白和音乐">跳过空白</button>` : ''}
       <button class="btn speed" id="speed">${player.rate}×</button>
       <a class="btn ghost" href="audio?id=${encodeURIComponent(l.id)}&track=${curTrack()}&download=1" download title="存成 MP3，放到手机或播放器上听">下载 MP3</a>
-    </div>${full ? '<div class="faint" style="margin-top:4px">现在是完整原声（含音乐和空白）。上面「声音」选「原声·去空白」或朗读，就能不停顿地连续听。</div>' : ''}</div>
+    </div>${full && !isDoc() ? '<div class="faint" style="margin-top:4px">现在是完整原声（含音乐和空白）。上面「声音」选「原声·去空白」或朗读，就能不停顿地连续听。</div>' : ''}</div>
     <div class="card" id="sents" style="padding:6px">${list.map(s => {
       const t = tm(s)
       return `<div class="sent ${opt.en ? '' : 'hide-e'} ${opt.zh ? '' : 'hide-z'}" data-i="${s.i}">

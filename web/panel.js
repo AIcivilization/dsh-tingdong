@@ -6,7 +6,7 @@
 
 import { stats } from './srs.js'
 import {
-  $, api, app, clearMediaControls, curTrack, esc, fmt, fmtDur, getPos, keys, loadAudio, loadLesson, loop, nav, player,
+  $, api, app, clearMediaControls, curTrack, esc, fmt, fmtDur, getPos, isDoc, keys, loadAudio, loadLesson, loop, nav, player,
   playSentence, S, TRACK_ORDER, trackLabel, store, tm, toast, usable, useTrack, when,
 } from './core.js'
 import { paneDrill, paneText, paneWords } from './listen.js'
@@ -137,36 +137,35 @@ async function render(soft = false) {
 function renderLibrary() {
   const st = S.status || {}
   const canImport = !S.status || st.ffmpeg
-  const warn = []
-  if (S.status && !st.models && canImport) warn.push('第一次导入会先下载语音识别模型（约 240 MB），之后都在本机识别。')
-  if (S.status && !st.llm && canImport) warn.push('没找到可用的大模型：只能识别英文，翻译讲解要等配置好模型后点「补全翻译」。')
-
   const groups = new Map()
   for (const l of S.lessons) {
     const g = l.group || ''
     if (!groups.has(g)) groups.set(g, [])
     groups.get(g).push(l)
   }
+  const type = store.get('newType', '')
 
   app.innerHTML = `
     <div id="todayCard">${todayCard(S.today)}</div>
-    ${warn.length ? `<div class="card small">${warn.map(w => `<div>⚠ ${w}</div>`).join('')}</div>` : ''}
-    ${S.lessons.length ? '' : `<div class="empty">还没有课。导入一个英文 MP3：本机识别出每一句英文，AI 翻译讲解，然后一句一句练到一听就懂。</div>`}
+    ${canImport ? `
+      <div class="section-title">新建课程</div>
+      <div class="new-grid">
+        <button class="new-card ${type === 'audio' ? 'on' : ''}" data-new="audio">
+          <span class="new-ico">🎧</span><b>导入音频</b>
+          <span class="faint">有声书、讲座、引导音频……MP3 / M4A / WAV / FLAC。本机识别出每一句英文，AI 翻译讲解。</span>
+        </button>
+        <button class="new-card ${type === 'doc' ? 'on' : ''}" data-new="doc">
+          <span class="new-ico">📄</span><b>导入文档</b>
+          <span class="faint">文章、手册、书……整理好的英文文字（粘贴或 TXT / Markdown）。AI 朗读成音频，再翻译讲解。</span>
+        </button>
+      </div>
+      <div id="newPanel"></div>
+      <div id="jobs"></div>` : `<div class="card small muted">这里只用来学习：在电脑上导入、做好课，再用电脑上的「发送到 VPS」发过来。<div id="jobs"></div></div>`}
+    <div class="section-title">我的课程</div>
+    ${S.lessons.length ? '' : `<div class="empty">还没有课。上面选一种：导入英文音频，或导入英文文档。</div>`}
     ${[...groups].map(([g, ls]) => `
       ${g ? `<div class="group-title">${esc(g)}</div>` : (groups.size > 1 ? '<div class="group-title">其他</div>' : '')}
       ${ls.map(lessonCard).join('')}`).join('')}
-    ${canImport ? `<div class="card">
-      <h3>导入英文音频</h3>
-      <div class="drop" id="drop">
-        <div class="row">
-          <input type="text" class="grow" id="path" placeholder="粘贴 MP3 文件或文件夹的路径" style="flex:1 1 200px">
-          <button class="btn primary" id="importBtn">导入</button>
-        </div>
-        <div class="faint" style="margin-top:8px">也可以把音频拖到这里，或 <a href="#" class="link" id="pick">选择文件</a>。文件夹会把里面的每个音频各做成一课。</div>
-        <input type="file" id="file" accept="audio/*,.mp3,.m4a,.m4b,.wav,.flac,.ogg,.opus,.aac" multiple hidden>
-      </div>
-      <div id="jobs"></div>
-    </div>` : `<div class="card small muted">这里只用来学习：在电脑上导入、做好课，再用电脑上的「发送到 VPS」发过来。<div id="jobs"></div></div>`}
     <div id="vpsCard"></div>
   `
   renderJobs()
@@ -174,7 +173,41 @@ function renderLibrary() {
   renderVps()
   app.querySelectorAll('.lesson').forEach(el => { el.onclick = () => go(`#/l/${el.dataset.id}`) })
   if (!canImport) return
+  app.querySelectorAll('[data-new]').forEach(b => {
+    b.onclick = () => {
+      const t = store.get('newType', '') === b.dataset.new ? '' : b.dataset.new // 再点一次收起
+      store.set('newType', t)
+      app.querySelectorAll('[data-new]').forEach(x => x.classList.toggle('on', x.dataset.new === t))
+      renderNewPanel(t)
+    }
+  })
+  renderNewPanel(type)
+}
 
+/** 新建课程：展开所选的那种 */
+function renderNewPanel(type) {
+  const box = $('#newPanel')
+  if (!box) return
+  if (type === 'audio') return newAudioPanel(box)
+  if (type === 'doc') return newDocPanel(box)
+  box.innerHTML = ''
+}
+
+function newAudioPanel(box) {
+  const st = S.status || {}
+  box.innerHTML = `<div class="card">
+    <h3>导入英文音频</h3>
+    ${!st.models ? '<div class="faint">第一次导入会先下载语音识别模型（约 240 MB），之后都在本机识别，音频不上传。</div>' : ''}
+    ${!st.llm ? '<div class="small" style="color:var(--mid)">没找到可用的大模型：只能识别英文，翻译讲解要等配置好模型后点「补全翻译」。</div>' : ''}
+    <div class="drop" id="drop" style="margin-top:8px">
+      <div class="row">
+        <input type="text" class="grow" id="path" placeholder="粘贴音频文件或文件夹的路径" style="flex:1 1 200px">
+        <button class="btn primary" id="importBtn">导入</button>
+      </div>
+      <div class="faint" style="margin-top:8px">也可以把音频拖到这里，或 <a href="#" class="link" id="pick">选择文件</a>。文件夹会把里面的每个音频各做成一课。</div>
+      <input type="file" id="file" accept="audio/*,.mp3,.m4a,.m4b,.wav,.flac,.ogg,.opus,.aac" multiple hidden>
+    </div>
+  </div>`
   const input = $('#path')
   input.value = store.get('lastPath', '')
   const doImport = async () => {
@@ -198,6 +231,104 @@ function renderLibrary() {
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over') }
   drop.ondragleave = () => drop.classList.remove('over')
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles([...e.dataTransfer.files]) }
+}
+
+let docHelp = null
+async function newDocPanel(box) {
+  box.innerHTML = '<div class="card"><div class="faint">…</div></div>'
+  try {
+    if (!docHelp) docHelp = await api('doc-help')
+    if (!S.voices) S.voices = await api('voices')
+  } catch (e) { box.innerHTML = `<div class="card small" style="color:var(--bad)">${esc(e.message)}</div>`; return }
+  const V = S.voices
+  const edgeReady = V.edge && V.edge.ready
+  const engine = store.get('docEngine', 'edge')
+  const list = engine === 'edge' ? ((V.edge && V.edge.en) || []) : ((V.kokoro && V.kokoro.voices) || []).map(v => ({ ...v, gender: v.id[1] === 'm' ? 'm' : 'f' }))
+  const voice = store.get(engine === 'edge' ? 'docVoiceEdge' : 'docVoiceKokoro', engine === 'edge' ? 'en-US-AndrewNeural' : 'am_michael')
+  const speed = store.get('docSpeed', 1)
+  const group = (g, name) => `<optgroup label="${name}">${list.filter(x => x.gender === g).map(x => `<option value="${esc(x.id)}" ${x.id === voice ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</optgroup>`
+  box.innerHTML = `<div class="card doc-new">
+    <h3>导入英文文档</h3>
+    <div class="step"><span class="num">1</span><div class="grow">
+      <b>先让 AI 把材料整理好</b>
+      <div class="faint">PDF、电子书、网页都行：把下面这段话连同材料一起发给 ChatGPT、DeepSeek、Kimi 等，它会整理成能直接导入的英文文字（只留正文、修好断行、按章节分好）。扫描版 PDF 也可以，让它先识别文字。</div>
+      ${S.status && S.status.host === 'dsh' ? '<div class="faint" style="margin-top:4px">💡 更省事：在 DSH 的对话里把 PDF 发给 AI，说「按听懂的格式整理后导入听懂」，它会整理好直接导入，不用复制粘贴。</div>' : ''}
+      <details style="margin-top:6px"><summary class="link">查看整理要求</summary><pre class="prompt">${esc(docHelp.prompt)}</pre></details>
+      <button class="btn" id="copyPrompt" style="margin-top:6px">复制整理要求</button>
+    </div></div>
+    <div class="step"><span class="num">2</span><div class="grow">
+      <b>把整理好的文字粘贴进来</b>
+      <textarea id="docText" rows="8" placeholder="# 第一章标题&#10;&#10;First paragraph of the chapter...&#10;&#10;Second paragraph...&#10;&#10;# 第二章标题&#10;&#10;..."></textarea>
+      <div class="row" style="margin-top:4px">
+        <span class="faint grow" id="docCount">每个「# 标题」开始一课；没有标题就整篇一课</span>
+        <a href="#" class="link" id="docPick">或选择 .txt / .md 文件</a>
+        <input type="file" id="docFile" accept=".txt,.md,.markdown,text/plain,text/markdown" hidden>
+      </div>
+      <input type="text" id="docTitle" placeholder="文档标题（可不填，用第一章的标题）" style="margin-top:6px">
+    </div></div>
+    <div class="step"><span class="num">3</span><div class="grow">
+      <b>选朗读的声音</b>
+      <div class="chips" style="margin-top:4px">
+        <button class="chip ${engine === 'edge' ? 'on' : ''}" data-docengine="edge">微软 Edge（最自然，要联网）</button>
+        <button class="chip ${engine === 'kokoro' ? 'on' : ''}" data-docengine="kokoro">Kokoro（离线）</button>
+      </div>
+      ${engine === 'edge' && !edgeReady ? `<div class="faint">Edge 语音要先装一个小组件（edge-tts，约 15 MB，装在插件自己的目录里，需要电脑上有 Python 3）。文字会发到微软的服务器朗读。</div>
+        <button class="btn" id="docEdgeInstall" style="margin-top:6px">安装 Edge 语音组件</button>` : `
+        <div class="row" style="margin-top:4px"><select id="docVoice">${group('m', '男声')}${group('f', '女声')}</select></div>
+        <div class="chips" style="margin-top:6px">${[0.85, 1, 1.15].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-docspeed="${x}">${x === 1 ? '正常语速' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>`}
+    </div></div>
+    <button class="btn primary big" id="docGo" ${engine === 'edge' && !edgeReady ? 'disabled' : ''}>开始导入</button>
+  </div>`
+  const ta = $('#docText')
+  ta.value = store.get('docDraft', '')
+  const count = () => {
+    const t = ta.value
+    const chapters = (t.match(/^#\s+\S/gm) || []).length
+    const words = (t.match(/[A-Za-z']+/g) || []).length
+    $('#docCount').textContent = t.trim() ? `${words.toLocaleString()} 个英文单词 · ${chapters ? `${chapters} 章（每章一课）` : '没有「# 标题」：整篇一课'}` : '每个「# 标题」开始一课；没有标题就整篇一课'
+  }
+  ta.oninput = () => { count(); try { store.set('docDraft', ta.value.slice(0, 200000)) } catch { /* 太大就不存草稿 */ } }
+  count()
+  $('#copyPrompt').onclick = () => copy(docHelp.prompt)
+  $('#docPick').onclick = e => { e.preventDefault(); $('#docFile').click() }
+  $('#docFile').onchange = async e => {
+    const f = e.target.files[0]
+    if (!f) return
+    ta.value = await f.text()
+    if (!$('#docTitle').value) $('#docTitle').value = f.name.replace(/\.(txt|md|markdown)$/i, '')
+    ta.oninput()
+  }
+  box.querySelectorAll('[data-docengine]').forEach(b => { b.onclick = () => { store.set('docEngine', b.dataset.docengine); newDocPanel(box) } })
+  box.querySelectorAll('[data-docspeed]').forEach(b => {
+    b.onclick = () => { store.set('docSpeed', Number(b.dataset.docspeed)); box.querySelectorAll('[data-docspeed]').forEach(x => x.classList.toggle('on', x === b)) }
+  })
+  const vs = $('#docVoice')
+  if (vs) vs.onchange = () => store.set(engine === 'edge' ? 'docVoiceEdge' : 'docVoiceKokoro', vs.value)
+  const inst = $('#docEdgeInstall')
+  if (inst) inst.onclick = async () => {
+    inst.disabled = true
+    inst.textContent = '正在安装…（第一次要一两分钟）'
+    try {
+      const r = await api('edge/install', {})
+      toast(r.ready ? `Edge 语音组件已装好（${r.version}）` : '安装没成功')
+      S.voices = null
+      newDocPanel(box)
+    } catch (e) { toast(e.message); inst.disabled = false; inst.textContent = '安装 Edge 语音组件' }
+  }
+  $('#docGo').onclick = async () => {
+    const btn = $('#docGo')
+    btn.disabled = true
+    try {
+      const r = await api('import-doc', { text: ta.value, title: $('#docTitle').value.trim(), engine, voice: vs ? vs.value : undefined, speed: store.get('docSpeed', 1) })
+      const fresh = r.items.filter(x => !x.existed)
+      toast(fresh.length ? `《${r.title}》分成 ${r.items.length} 课，正在朗读和翻译` : '这份文档导入过了')
+      store.set('docDraft', '')
+      ta.value = ''
+      count()
+      pollJobsNow()
+    } catch (e) { toast(e.message) }
+    btn.disabled = false
+  }
 }
 
 // —— 今日学习卡片 ——
@@ -243,7 +374,7 @@ function lessonCard(l) {
     error: '<span class="badge err">出错</span>',
   }[l.status] || (s.due ? `<span class="badge">待复习 ${s.due}</span>` : (s.total && s.mastered === s.total ? '<span class="badge ok">已掌握</span>' : ''))
   return `<div class="card lesson" data-id="${esc(l.id)}">
-    <div class="row"><div class="grow"><div class="t">${esc(l.titleZh || l.title)}</div>${l.titleZh ? `<div class="en">${esc(l.title)}</div>` : ''}</div>${badge}</div>
+    <div class="row"><div class="grow"><div class="t"><span class="kind ${l.kind === 'doc' ? 'doc' : ''}">${l.kind === 'doc' ? '文档' : '音频'}</span>${esc(l.titleZh || l.title)}</div>${l.titleZh ? `<div class="en">${esc(l.title)}</div>` : ''}</div>${badge}</div>
     <div class="faint" style="margin:6px 0">${fmtDur(l.duration)} · ${l.sentences} 句${l.translated < l.sentences ? ` · 已翻译 ${l.translated}` : ''} · 学过 ${s.seen} · 掌握 ${s.mastered}/${s.total}${s.nextDue && !s.due ? ` · 下次复习 ${when(s.nextDue)}` : ''}</div>
     <div class="bar two"><i class="seen" style="width:${seenPct}%"></i><i style="width:${pct}%"></i></div>
     ${l.error ? `<div class="small" style="color:var(--bad);margin-top:6px">${esc(l.error)}</div>` : ''}
@@ -440,7 +571,7 @@ function paneOverview(pane, l, st) {
   pane.innerHTML = `
     <div class="card">
       ${l.titleZh ? `<div style="font-weight:600">${esc(l.titleZh)}</div><div class="faint">${esc(l.title)}</div>` : `<div style="font-weight:600">${esc(l.title)}</div>`}
-      <div class="faint" style="margin-top:2px">${fmtDur(l.duration)} · ${l.sentences.length} 句${l.model ? ` · 翻译：${esc(l.model)}` : ''}</div>
+      <div class="faint" style="margin-top:2px">${l.kind === 'doc' ? `文档 · 朗读：${esc(l.voiceLabel || 'AI')} · ` : ''}${fmtDur(l.duration)} · ${l.sentences.length} 句${l.model ? ` · 翻译：${esc(l.model)}` : ''}</div>
       ${l.summaryZh ? `<p class="summary">${esc(l.summaryZh)}</p>` : ''}
       ${l.note ? `<div class="small" style="color:var(--mid)">${esc(l.note)}</div>` : ''}
       ${l.status === 'error' ? `<div class="small" style="color:var(--bad)">${esc(l.error)}</div>` : ''}
@@ -504,6 +635,8 @@ function voicesCard(l) {
   const opts = (list, sel) => list.map(x => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(x.label)}</option>`).join('')
   const speeds = sel => [0.8, 0.9, 1].map(x => `<option value="${x}" ${x === sel ? 'selected' : ''}>${x === 1 ? '正常语速' : x + ' 倍语速'}</option>`).join('')
   const row = name => {
+    // 文档课没有真实录音：「去空白」「压背景」没意义
+    if (isDoc() && (name === 'clean' || name === 'cleannr')) return ''
     const meta = name === 'full' ? { duration: l.duration } : S.cur.tracks[name]
     if (!meta && !canMake) return ''
     const job = busy(name)
@@ -518,7 +651,7 @@ function voicesCard(l) {
     return `<div class="track ${name === t ? 'on' : ''}">
       <div class="row"><b class="grow">${esc(trackLabel(name))}</b>
         ${meta ? `<span class="faint">${fmt(meta.duration)}${meta.voice ? ' · ' + esc(meta.voice) : ''}</span>` : '<span class="faint">未生成</span>'}</div>
-      <div class="faint">${TRACK_NOTES[name]}${name === 'kokoro' && v.kokoro && !v.kokoro.ready && canMake ? '；第一次生成会下载约 103 MB 语音模型' : ''}</div>
+      <div class="faint">${name === 'full' && isDoc() ? '导入文档时 AI 朗读生成的音频' : TRACK_NOTES[name]}${name === 'kokoro' && v.kokoro && !v.kokoro.ready && canMake ? '；第一次生成会下载约 103 MB 语音模型' : ''}</div>
       ${stale ? '<div class="small" style="color:var(--mid)">句子改过了，这条声音对不上了，建议重新生成</div>' : ''}
       ${job ? `<div class="small muted" style="margin-top:4px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : `
       <div class="row" style="margin-top:6px">

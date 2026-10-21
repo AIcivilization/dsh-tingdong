@@ -5,7 +5,16 @@
 
 ## 它做什么
 
-1. **导入**：选一个 MP3（或整个文件夹），本机识别出每一句英文和它的起止时间。
+首页有两个入口：**导入音频**（有声书、讲座、引导音频）和**导入文档**（文章、手册、书）。
+
+**导入文档**：把整理好的英文纯文本粘贴进来，或选 .txt / .md 文件。格式很简单——每章一行 `# 章节标题`（每章做成一课），`## 小标题` 也会读出来，段落之间空一行。
+PDF、电子书、网页先交给别的 AI（ChatGPT、DeepSeek、Kimi……）整理：界面上有现成的「整理要求」可以一键复制，连同材料一起发过去。
+在 DSH 对话里更省事：把 PDF 发给 AI，说「按听懂的格式整理后导入听懂」，它会整理好直接导入（AI 工具 `tingdong_import_text`）。
+导入后用 **微软 Edge** 的英文语音朗读（默认 Andrew，14 种美式 / 英式男女声，可调语速；也可选离线的 Kokoro），句与句之间停 0.6 秒、换段 1.2 秒，再逐句翻译讲解。之后和音频课一样学：精听、复习、磨耳朵、连续听、导出中文配音和字幕。
+
+**导入音频**：
+
+1. **识别**：选一个 MP3（或整个文件夹），本机识别出每一句英文和它的起止时间。
    识别用的是 DSH 自带语音输入的同一套模型（SenseVoice + Silero VAD），音频不上传；用过 DSH 语音输入就不用再下载。
 2. **讲解**：用你在 DSH 里选的大模型逐句校对英文（修正识别错误，如 "resna tuning" → "resonant tuning"）、
    翻成口语化中文、挑出生词（带音标）、写一句「听音提示」（哪里连读、弱读、吞音），再写全篇概述和关键术语表。
@@ -46,7 +55,7 @@
 
 电脑快捷键：空格 重听 · 回车 下一步 · 1/2/3 评分 · ←/→ 上一句/下一句 · S 变速（1× / 0.85× / 0.7×）· L 单句循环
 
-在 DSH 对话里也可以直接说：「把 /Volumes/…/CD4 导入听懂」「我这课哪些句子总听不懂？给我讲讲」——插件给 AI 注册了 `tingdong_import`、`tingdong_lessons`、`tingdong_sentences` 三个工具。
+在 DSH 对话里也可以直接说：「把 /Volumes/…/CD4 导入听懂」「把这份 PDF 整理后导入听懂」「我这课哪些句子总听不懂？给我讲讲」——插件给 AI 注册了 `tingdong_import`、`tingdong_import_text`、`tingdong_lessons`、`tingdong_sentences` 四个工具。
 
 **更新 / 卸载**：在 DSH 的「设置 → 听懂」里。打开时自动查 npm 上有没有新版本；有就出现「更新到 vX」，点一下由 DSH 的插件管理器装好（和插件市场同一套机制），重启 DSH 生效。「卸载」会先确认，只移除插件，课程和学习进度留在 `~/.dsh/dsh-tingdong`。学习面板首页标题旁显示版本号，有新版本时会提醒。
 
@@ -92,6 +101,7 @@ dsh plugin --profile desktop add /path/to/dsh-go
 ```bash
 node bin/dsh-tingdong.js import "/Volumes/kuozhan/门罗/CD4"     # 整个文件夹，每个音频一课
 node bin/dsh-tingdong.js serve                                   # 打开 http://127.0.0.1:4810
+node bin/dsh-tingdong.js import-doc 手册.md --voice en-US-AndrewNeural   # 导入整理好的英文文档
 node bin/dsh-tingdong.js list
 node bin/dsh-tingdong.js voices all --track kokoro --voice am_michael   # 批量生成声音轨
 ```
@@ -120,7 +130,7 @@ npm test
 - `lib/translate.js` 校对 + 翻译 + 生词 + 听音提示；缺句自动缩小批次重试，失败的留空，之后可「补全翻译」
 - `lib/tracks.js` 声音轨：原声按句截取拼接；朗读交给 `lib/tts-worker.js` 子进程（Kokoro / macOS say），`lib/pcm.js` 统一拼接编码并出时间表
 - `lib/srs.js` 间隔复习；`lib/store.js` 原子写入的 JSON 存储；`lib/today.js` 今日学习（按用户时区算日期）
-- `lib/export.js` 文字导出；`lib/edge.js` Edge 语音组件（edge-tts）的安装和调用
+- `lib/doc.js` 文档：切句、分章、整理要求；`lib/export.js` 文字导出；`lib/edge.js` Edge 语音组件（edge-tts）的安装和调用
 - `lib/drill.js` 磨耳朵音频；`lib/lookup.js` 点词查意思、重新讲解；`lib/vps.js` 经 SSH 发送到 VPS
 - `plugin/` DSH 宿主端（路由、AI 工具）和界面入口（右侧栏、设置）；路由先过 DSH 的 `connection.requestRejection()` 登录校验
 - `web/` 学习面板（原生 JS 模块，无构建）：`panel.js` 路由和首页 · `study.js` 精听、复习、今日学习 · `listen.js` 连续听、磨耳朵、词汇 · `edit.js` 改句子、查词 · `core.js` 播放器和公共状态
