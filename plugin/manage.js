@@ -54,7 +54,8 @@ const ALREADY = '这个版本的 DSH 不能在运行中升级已装的插件。�
 export function createManager(o) {
   let running = ''
   const readPkg = async () => { try { return JSON.parse(await readFile(join(o.pkgRoot, 'package.json'), 'utf8')) } catch { return {} } }
-  readPkg().then(p => { running = p.version || '' })
+  // 初始包信息读取：info()/update() 开先 await 它，避免 running 还没读到就比版本
+  const pkgReady = readPkg().then(p => { running = p.version || '' })
 
   let cache = null
   async function latest(force) {
@@ -79,6 +80,7 @@ export function createManager(o) {
   return {
     /** 版本信息：正在运行的、磁盘上装好的、npm 上最新的 */
     async info(force) {
+      await pkgReady
       const [pkg, newest] = await Promise.all([readPkg(), latest(force)])
       const installed = pkg.version || ''
       const current = compareVersions(installed, running) > 0 ? installed : running
@@ -96,6 +98,7 @@ export function createManager(o) {
       }
     },
     async update() {
+      await pkgReady
       const newest = await latest(true)
       const cmd = command(`add ${PACKAGE}@${newest || 'latest'}`)
       if (!newest) return { ok: false, message: '查不到 npm 上的最新版本，检查网络后再试', command: cmd }

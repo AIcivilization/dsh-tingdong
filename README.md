@@ -1,7 +1,25 @@
 # 听懂 · dsh-tingdong
 
-把英文有声读物（MP3）变成听力课，练到**听到英文就知道是什么意思**。
+[![npm version](https://img.shields.io/npm/v/dsh-tingdong.svg?style=flat-square)](https://www.npmjs.com/package/dsh-tingdong)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-tingdong.svg?style=flat-square)](https://www.npmjs.com/package/dsh-tingdong)
+[![license](https://img.shields.io/npm/l/dsh-tingdong.svg?style=flat-square)](LICENSE)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/aicivilization/dsh-tingdong)
+
+把英文有声读物（MP3）或英文文档变成听力课，练到**听到英文就知道是什么意思**。
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）插件，也能脱离 DSH 单独用。
+
+## 安装
+
+```bash
+dsh plugin --profile desktop add dsh-tingdong    # 装进 DSH（把 desktop 换成你的 profile 名，先完全退出 DSH）
+npm i -g dsh-tingdong                            # 命令行版：不开 DSH 也能用
+dsh plugin --profile desktop add github:AIcivilization/dsh-tingdong   # 源码安装
+```
+
+- **能力分类**：工具与能力（英语听力学习）
+- **运行要求**：Node.js ≥ 20；DSH web / desktop profile；解码 MP3 需要 [ffmpeg](https://ffmpeg.org)（Mac：`brew install ffmpeg`）
+- **许可证**：[MIT](LICENSE)
+- **数据边界**：课程和学习进度都在本机 `~/.dsh/dsh-tingdong/`；识别用 DSH 自带语音输入模型（音频不上传）；讲解和朗读用你在 DSH 里选的大模型；Edge 语音组件需联网（文字会发到微软服务器，详见下方导出说明）
 
 ## 它做什么
 
@@ -70,7 +88,7 @@
 装进 DSH（把 `desktop` 换成你的 profile 名；先完全退出 DSH）：
 
 ```bash
-dsh plugin --profile desktop add /path/to/dsh-go
+dsh plugin --profile desktop add dsh-tingdong
 ```
 
 重新打开 DSH，在对话页打开右侧栏，选「听懂 · 英文听力」。设置里的「听懂」分区会显示 ffmpeg、识别模型、翻译模型是否就绪。
@@ -138,3 +156,14 @@ npm test
 - `lib/drill.js` 磨耳朵音频；`lib/lookup.js` 点词查意思、重新讲解；`lib/vps.js` 经 SSH 发送到 VPS
 - `plugin/` DSH 宿主端（路由、AI 工具）和界面入口（右侧栏、设置）；路由先过 DSH 的 `connection.requestRejection()` 登录校验
 - `web/` 学习面板（原生 JS 模块，无构建）：`panel.js` 路由和首页 · `study.js` 精听、复习、今日学习 · `listen.js` 连续听、磨耳朵、词汇 · `edit.js` 改句子、查词 · `core.js` 播放器和公共状态
+
+## 许可
+
+[MIT](LICENSE) · Copyright © 2026 AIcivilization
+
+## 收录渠道
+
+- [DSH Plugin Hub（dsh-plugin.org 社区插件市场）](https://dsh-plugin.org/plugins/aicivilization/dsh-tingdong)
+- [awesome-dsh-plugin 精选列表](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+- dsh-plugin-shop 插件商店（每日自动收录）
+- 52DSH / tuofangzhe 插件目录（证据分级收录）
