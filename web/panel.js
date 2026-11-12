@@ -155,16 +155,16 @@ function renderLibrary() {
           <span class="faint">有声书、讲座、引导音频……MP3 / M4A / WAV / FLAC。本机识别出每一句英文，AI 翻译讲解。</span>
         </button>
         <button class="new-card ${type === 'doc' ? 'on' : ''}" data-new="doc">
-          <span class="new-ico">📄</span><b>导入文档</b>
+          <span class="new-ico">📄</span><b>文档转音频</b>
           <span class="faint">文章、手册、书……整理好的英文文字（粘贴或 TXT / Markdown）。AI 朗读成音频，再翻译讲解。</span>
         </button>
       </div>
       <div id="newPanel"></div>
       <div id="jobs"></div>` : `<div class="card small muted">这里只用来学习：在电脑上导入、做好课，再用电脑上的「发送到 VPS」发过来。<div id="jobs"></div></div>`}
     <div class="section-title">我的课程</div>
-    ${S.lessons.length ? '' : `<div class="empty">还没有课。上面选一种：导入英文音频，或导入英文文档。</div>`}
+    ${S.lessons.length ? '' : `<div class="empty">还没有课。上面选一种：导入英文音频，或把英文文档转成音频。</div>`}
     ${[...groups].map(([g, ls]) => `
-      ${g ? `<div class="group-title">${esc(g)}</div>` : (groups.size > 1 ? '<div class="group-title">其他</div>' : '')}
+      ${g ? `<div class="group-title row"><span class="grow">${esc(g)}</span>${docDownload(ls)}</div>` : (groups.size > 1 ? '<div class="group-title">其他</div>' : '')}
       ${ls.map(lessonCard).join('')}`).join('')}
     <div id="vpsCard"></div>
   `
@@ -238,7 +238,7 @@ let pendingDoc = null // 已经读出文字、等确认的文档
 function newDocPanel(box) {
   if (pendingDoc) return docConfirm(box, pendingDoc)
   box.innerHTML = `<div class="card">
-    <h3>导入英文文档</h3>
+    <h3>文档转音频</h3>
     <div class="drop" id="docDrop">
       <div class="new-ico">📄</div>
       <div><b>把文档拖到这里</b>，或 <a href="#" class="link" id="docPick">选择文件</a></div>
@@ -370,6 +370,15 @@ async function docConfirm(box, doc) {
       pollJobsNow()
     } catch (err) { toast(err.message); btn.disabled = false }
   }
+}
+
+/** 文档那一组：整篇音频下载（几课合成一个 MP3）；还有课没做好就先不给 */
+function docDownload(ls) {
+  const ids = [...new Set(ls.map(l => l.docId).filter(Boolean))]
+  if (ls.some(l => l.kind !== 'doc') || ids.length !== 1) return ''
+  const waiting = ls.filter(l => !l.hasAudio).length
+  if (waiting) return `<span class="faint">还有 ${waiting} 课在转音频</span>`
+  return `<a class="link" href="doc/audio?id=${ids[0]}" download title="整篇文档的朗读，合成一个 MP3">⬇ 下载整篇音频</a>`
 }
 
 // —— 今日学习卡片 ——
@@ -618,6 +627,7 @@ function paneOverview(pane, l, st) {
       ${l.note ? `<div class="small" style="color:var(--mid)">${esc(l.note)}</div>` : ''}
       ${l.status === 'error' ? `<div class="small" style="color:var(--bad)">${esc(l.error)}</div>` : ''}
     </div>
+    ${l.kind === 'doc' && S.cur.lesson.sentences.length ? docAudioCard(l) : ''}
     <div class="card">
       <div class="stat-grid">
         <div><b>${st.fresh}</b><span>没学过</span></div>
@@ -659,6 +669,22 @@ function paneOverview(pane, l, st) {
   bindManage(pane, l)
 }
 
+/** 文档课：下载朗读音频（这一课 / 整篇） */
+function docAudioCard(l) {
+  const same = S.lessons.filter(x => x.docId && l.source && x.docId === l.source.docId)
+  const waiting = same.filter(x => !x.hasAudio).length
+  return `<div class="card">
+    <h3>下载音频</h3>
+    <div class="faint">把文档转成的音频下载成 MP3，放到手机或播放器上听（朗读：${esc(l.voiceLabel || 'AI')}）。</div>
+    <div class="row" style="margin-top:8px">
+      <a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=full&download=1" download>这一课 MP3（${fmt(l.duration)}）</a>
+      ${same.length > 1 ? (waiting
+        ? `<span class="faint">整篇 ${same.length} 课，还有 ${waiting} 课在转音频，做好后可以合成一个下载</span>`
+        : `<a class="btn" href="doc/audio?id=${l.source.docId}" download>整篇 ${same.length} 课合成一个 MP3</a>`) : ''}
+    </div>
+  </div>`
+}
+
 // —— 概览里的「声音」卡片：每种声音一行：状态、选用、试听、生成、下载 ——
 const TRACK_NOTES = {
   full: '原始音频，含背景音乐和长空白',
@@ -693,7 +719,7 @@ function voicesCard(l) {
     return `<div class="track ${name === t ? 'on' : ''}">
       <div class="row"><b class="grow">${esc(trackLabel(name))}</b>
         ${meta ? `<span class="faint">${fmt(meta.duration)}${meta.voice ? ' · ' + esc(meta.voice) : ''}</span>` : '<span class="faint">未生成</span>'}</div>
-      <div class="faint">${name === 'full' && isDoc() ? '导入文档时 AI 朗读生成的音频' : TRACK_NOTES[name]}${name === 'kokoro' && v.kokoro && !v.kokoro.ready && canMake ? '；第一次生成会下载约 103 MB 语音模型' : ''}</div>
+      <div class="faint">${name === 'full' && isDoc() ? '文档转音频时 AI 朗读生成的音频' : TRACK_NOTES[name]}${name === 'kokoro' && v.kokoro && !v.kokoro.ready && canMake ? '；第一次生成会下载约 103 MB 语音模型' : ''}</div>
       ${stale ? '<div class="small" style="color:var(--mid)">句子改过了，这条声音对不上了，建议重新生成</div>' : ''}
       ${job ? `<div class="small muted" style="margin-top:4px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : `
       <div class="row" style="margin-top:6px">
