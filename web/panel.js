@@ -12,6 +12,16 @@ import {
 import { paneDrill, paneText, paneWords } from './listen.js'
 import { paneReview, paneStudy, paneToday } from './study.js'
 
+// ———————————————————— 图标（细线，跟着文字颜色） ————————————————————
+
+const ICONS = {
+  audio: '<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>',
+  doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  down: '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
+  phone: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+}
+const ico = name => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`
+
 // ———————————————————— 路由 ————————————————————
 
 function route() {
@@ -70,7 +80,7 @@ function renderJobs() {
     return
   }
   const recent = S.jobs.filter(j => j.state === 'running' || j.state === 'queued' || (j.finishedAt && Date.now() - j.finishedAt < 60e3 && j.state !== 'done'))
-  box.innerHTML = recent.length ? `<div style="margin-top:12px">${recent.map(jobLine).join('')}</div>` : ''
+  box.innerHTML = recent.length ? `<div class="card jobs">${recent.map(jobLine).join('')}</div>` : ''
   box.querySelectorAll('[data-cancel]').forEach(b => {
     b.onclick = async () => { try { await api('cancel', { job: b.dataset.cancel }); pollJobsNow() } catch (e) { toast(e.message) } }
   })
@@ -79,10 +89,10 @@ function renderJobs() {
 function jobLine(j) {
   const pct = j.total ? Math.round(j.done / j.total * 100) : (j.state === 'running' ? 5 : 0)
   const state = { queued: '排队中', running: j.stage, error: '出错', cancelled: '已取消', done: '完成' }[j.state]
-  return `<div style="margin:8px 0">
-    <div class="row small"><span class="grow ellipsis">${esc(j.title)}</span>
-      <span class="muted">${esc(state)}${j.total ? ` ${j.done}/${j.total} ${esc(j.message || '')}` : ''}</span>
-      ${j.state === 'running' || j.state === 'queued' ? `<button class="btn ghost small" data-cancel="${esc(j.id)}" style="padding:0 8px">取消</button>` : ''}</div>
+  return `<div class="job">
+    <div class="row nowrap small"><span class="grow ellipsis">${esc(j.title)}</span>
+      <span class="muted ellipsis">${esc(state)}${j.total ? ` ${j.done}/${j.total} ${esc(j.message || '')}` : ''}</span>
+      ${j.state === 'running' || j.state === 'queued' ? `<button class="btn ghost small" data-cancel="${esc(j.id)}">取消</button>` : ''}</div>
     ${j.state === 'running' ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}
     ${j.error ? `<div class="small" style="color:var(--bad)">${esc(j.error)}</div>` : ''}
   </div>`
@@ -145,33 +155,37 @@ function renderLibrary() {
   }
   const type = store.get('newType', '')
 
+  const flow = (kind, icon, steps, note, cta) => `
+    <button class="flow ${type === kind ? 'on' : ''}" data-new="${kind}">
+      ${ico(icon)}
+      <span class="grow">
+        <span class="flow-line">${steps.map((s, k) => `${k ? '<span class="arr">→</span>' : ''}<span>${s}</span>`).join('')}</span>
+        <span class="faint">${note}</span>
+      </span>
+      <span class="cta">${cta} ›</span>
+    </button>`
+
   app.innerHTML = `
     <div id="todayCard">${todayCard(S.today)}</div>
     ${canImport ? `
-      <div class="section-title">新建课程</div>
-      <div class="new-grid">
-        <button class="new-card ${type === 'audio' ? 'on' : ''}" data-new="audio">
-          <span class="new-ico">🎧</span><b>导入音频</b>
-          <span class="faint">有声书、讲座、引导音频……MP3 / M4A / WAV / FLAC。本机识别出每一句英文，AI 翻译讲解。</span>
-        </button>
-        <button class="new-card ${type === 'doc' ? 'on' : ''}" data-new="doc">
-          <span class="new-ico">📄</span><b>文档转音频</b>
-          <span class="faint">文章、手册、书……整理好的英文文字（粘贴或 TXT / Markdown）。AI 朗读成音频，再翻译讲解。</span>
-        </button>
+      <div class="section-title">新建 <span class="n">做好的同时也是一节听力课，成品都能下载到本地</span></div>
+      <div class="flows">
+        ${flow('audio', 'audio', ['英文音频', '带时间的字幕', '中文配音'], '识别出每一句英文和它的时间，导出字幕；再按同样的时间生成中文音频', '导入音频')}
+        ${flow('doc', 'doc', ['文档 / 文字', '朗读音频', '下载到本地'], 'PDF、Word、EPUB、TXT 或粘贴的文字，AI 朗读成 MP3，单课或整篇下载', '文档转音频')}
       </div>
       <div id="newPanel"></div>
-      <div id="jobs"></div>` : `<div class="card small muted">这里只用来学习：在电脑上导入、做好课，再用电脑上的「发送到 VPS」发过来。<div id="jobs"></div></div>`}
-    <div class="section-title">我的课程</div>
+      <div id="jobs"></div>` : `<div class="card small muted">这里只用来学习：在电脑上导入、做好课，再用电脑上的「发送到 VPS」发过来。</div><div id="jobs"></div>`}
+    <div class="section-title">我的课程 ${S.lessons.length ? `<span class="n">${S.lessons.length}</span>` : ''}</div>
     ${S.lessons.length ? '' : `<div class="empty">还没有课。上面选一种：导入英文音频，或把英文文档转成音频。</div>`}
-    ${[...groups].map(([g, ls]) => `
-      ${g ? `<div class="group-title row"><span class="grow">${esc(g)}</span>${docDownload(ls)}</div>` : (groups.size > 1 ? '<div class="group-title">其他</div>' : '')}
-      ${ls.map(lessonCard).join('')}`).join('')}
+    ${[...groups].map(([g, ls]) => `<div class="list">
+      ${g || groups.size > 1 ? `<div class="list-head"><b class="ellipsis">${esc(g || '其他')}</b><span class="grow">${ls.length} 课</span>${docDownload(ls)}</div>` : ''}
+      ${ls.map(lessonRow).join('')}</div>`).join('')}
     <div id="vpsCard"></div>
   `
   renderJobs()
   loadToday()
   renderVps()
-  app.querySelectorAll('.lesson').forEach(el => { el.onclick = () => go(`#/l/${el.dataset.id}`) })
+  app.querySelectorAll('.lrow').forEach(el => { el.onclick = () => go(`#/l/${el.dataset.id}`) })
   if (!canImport) return
   app.querySelectorAll('[data-new]').forEach(b => {
     b.onclick = () => {
@@ -196,17 +210,17 @@ function renderNewPanel(type) {
 function newAudioPanel(box) {
   const st = S.status || {}
   box.innerHTML = `<div class="card">
-    <h3>导入英文音频</h3>
-    ${!st.models ? '<div class="faint">第一次导入会先下载语音识别模型（约 240 MB），之后都在本机识别，音频不上传。</div>' : ''}
-    ${!st.llm ? '<div class="small" style="color:var(--mid)">没找到可用的大模型：只能识别英文，翻译讲解要等配置好模型后点「补全翻译」。</div>' : ''}
-    <div class="drop" id="drop" style="margin-top:8px">
-      <div class="row">
-        <input type="text" class="grow" id="path" placeholder="粘贴音频文件或文件夹的路径" style="flex:1 1 200px">
+    <div class="drop" id="drop">
+      <div class="row nowrap">
+        <input type="text" class="grow" id="path" placeholder="粘贴音频文件或文件夹的路径">
         <button class="btn primary" id="importBtn">导入</button>
       </div>
-      <div class="faint" style="margin-top:8px">也可以把音频拖到这里，或 <a href="#" class="link" id="pick">选择文件</a>。文件夹会把里面的每个音频各做成一课。</div>
+      <div class="faint" style="margin-top:6px">或把音频拖到这里 · <a href="#" class="link" id="pick">选择文件</a> · MP3 / M4A / WAV / FLAC，文件夹里每个音频各做成一课</div>
       <input type="file" id="file" accept="audio/*,.mp3,.m4a,.m4b,.wav,.flac,.ogg,.opus,.aac" multiple hidden>
     </div>
+    <div class="faint" style="margin-top:6px">做好后在课程的「导出」里下载：带时间的字幕（SRT / LRC）、时间对齐的中文配音（MP3 / FLAC）。</div>
+    ${!st.models ? '<div class="faint">第一次导入会先下载语音识别模型（约 240 MB），之后都在本机识别，音频不上传。</div>' : ''}
+    ${!st.llm ? '<div class="small" style="color:var(--mid)">没找到可用的大模型：只能识别英文，翻译讲解要等配置好模型后点「补全翻译」。</div>' : ''}
   </div>`
   const input = $('#path')
   input.value = store.get('lastPath', '')
@@ -238,21 +252,19 @@ let pendingDoc = null // 已经读出文字、等确认的文档
 function newDocPanel(box) {
   if (pendingDoc) return docConfirm(box, pendingDoc)
   box.innerHTML = `<div class="card">
-    <h3>文档转音频</h3>
     <div class="drop" id="docDrop">
-      <div class="new-ico">📄</div>
       <div><b>把文档拖到这里</b>，或 <a href="#" class="link" id="docPick">选择文件</a></div>
-      <div class="faint" style="margin-top:4px">PDF、Word（.docx）、EPUB 电子书、网页（.html）、TXT、Markdown · 最大 100 MB · 约 6 万词以内</div>
+      <div class="faint">PDF · Word（.docx）· EPUB · 网页 · TXT · Markdown，最大 100 MB、约 6 万词</div>
       <input type="file" id="docFile" accept=".pdf,.docx,.epub,.html,.htm,.txt,.md,.markdown" hidden>
     </div>
-    <div class="faint" style="margin-top:8px">导入后先让你确认：AI 会把文字整理好（去掉页眉页码、修好断行、分好章节，原文不改），再朗读成音频、逐句翻译讲解。</div>
-    <details style="margin-top:8px"><summary class="link">没有文件？直接粘贴英文</summary>
-      <textarea id="docText" rows="6" placeholder="把英文文章粘贴到这里"></textarea>
-      <button class="btn" id="docPaste" style="margin-top:6px">下一步</button>
+    <div class="faint" style="margin-top:6px">先让你确认：AI 把文字整理好（去页眉页码、修断行、分章节，原文不改），再朗读成音频。转好的音频在课程列表和课程页里下载到本地。</div>
+    <details style="margin-top:6px"><summary class="link">没有文件？直接粘贴英文</summary>
+      <textarea id="docText" rows="5" placeholder="把英文文章粘贴到这里" style="margin-top:6px"></textarea>
+      <button class="btn" id="docPaste" style="margin-top:4px">下一步</button>
     </details>
     <div id="docBusy"></div>
   </div>`
-  const busy = msg => { $('#docBusy').innerHTML = msg ? `<div class="faint" style="margin-top:8px">${msg}</div>` : '' }
+  const busy = msg => { $('#docBusy').innerHTML = msg ? `<div class="faint" style="margin-top:6px">${msg}</div>` : '' }
   const got = doc => { pendingDoc = doc; docConfirm(box, doc) }
   const upload = f => {
     if (!f) return
@@ -303,16 +315,14 @@ async function docConfirm(box, doc) {
   const e = doc.estimate
   const blocked = engine === 'edge' && !edgeReady
   box.innerHTML = `<div class="card doc-confirm">
-    <h3>确认导入</h3>
-    <div class="row"><span class="new-ico">📄</span><div class="grow"><b>${esc(doc.name)}</b>
-      <div class="faint">${esc(doc.type)}${doc.pages ? ` · ${doc.pages} 页` : ''} · 约 ${e.words.toLocaleString()} 个英文单词</div></div></div>
-    <details style="margin-top:6px"><summary class="link">看看读到的文字</summary><pre class="prompt">${esc(doc.preview)}${doc.preview.length >= 600 ? '…' : ''}</pre></details>
+    <div class="row nowrap">${ico('doc')}<div class="grow"><b>${esc(doc.name)}</b>
+      <div class="faint">${esc(doc.type)}${doc.pages ? ` · ${doc.pages} 页` : ''} · 约 ${e.words.toLocaleString()} 个英文单词 · <details style="display:inline"><summary class="link" style="display:inline">看看读到的文字</summary><pre class="prompt">${esc(doc.preview)}${doc.preview.length >= 600 ? '…' : ''}</pre></details></div></div></div>
     <div class="ai-note">
       ${doc.needsCleanup
         ? (doc.hasModel
-          ? `🤖 <b>会用 AI 整理文字</b>（${esc(doc.model)}）：去掉页眉页码和目录、修好断行、分好章节。只整理格式，原文一个字都不改，不翻译。整理好的文字会存档，随时能下载。`
-          : '⚠ 没有可用的大模型：只能简单接好断行，页眉页码可能留下。配好 DSH 的默认模型再导入效果更好。')
-        : '✓ 已经是整理好的格式（有「# 章节」），不用 AI 整理。'}
+          ? `<b>会用 AI 整理文字</b>（${esc(doc.model)}）：去掉页眉页码和目录、修好断行、分好章节。只整理格式，原文一个字都不改，不翻译。整理好的文字会存档，随时能下载。`
+          : '没有可用的大模型：只能简单接好断行，页眉页码可能留下。配好 DSH 的默认模型再导入效果更好。')
+        : '已经是整理好的格式（有「# 章节」），不用 AI 整理。'}
     </div>
     <div class="est">
       <div><b>${e.lessons}</b><span>约几课</span></div>
@@ -332,8 +342,8 @@ async function docConfirm(box, doc) {
       <label>声音</label><select id="docVoice">${group('m', '男声')}${group('f', '女声')}</select>
       <label>语速</label><div class="chips">${[0.85, 1, 1.15].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-docspeed="${x}">${x === 1 ? '正常' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>`}
     </div>
-    <div class="row" style="margin-top:12px">
-      <button class="btn primary big" id="docGo" ${blocked ? 'disabled' : ''}>确定，开始导入</button>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary big" id="docGo" ${blocked ? 'disabled' : ''}>确定，开始转音频</button>
       <button class="btn ghost" id="docCancel">取消</button>
     </div>
   </div>`
@@ -378,7 +388,7 @@ function docDownload(ls) {
   if (ls.some(l => l.kind !== 'doc') || ids.length !== 1) return ''
   const waiting = ls.filter(l => !l.hasAudio).length
   if (waiting) return `<span class="faint">还有 ${waiting} 课在转音频</span>`
-  return `<a class="link" href="doc/audio?id=${ids[0]}" download title="整篇文档的朗读，合成一个 MP3">⬇ 下载整篇音频</a>`
+  return `<a class="btn small" href="doc/audio?id=${ids[0]}" download title="整篇文档的朗读，合成一个 MP3 下载到本地">${ico('down')}整篇音频</a>`
 }
 
 // —— 今日学习卡片 ——
@@ -395,24 +405,23 @@ function todayCard(t) {
   const n = t.queue.length
   const max = Math.max(1, ...t.week.map(d => d.count))
   const wd = ['日', '一', '二', '三', '四', '五', '六']
+  const sub = [
+    n ? `复习 ${t.dueCount} · 新句 ${t.newCount}` : '可以去「连续听」或「磨耳朵」再听一遍',
+    t.todayCount ? `今天已学 ${t.todayCount} 句 · 约 ${t.minutes} 分钟` : '',
+    t.streak ? `连续 ${t.streak} 天` : '',
+  ].filter(Boolean).join(' · ')
   return `<div class="card today">
-    <div class="row">
-      <div class="grow">
-        <div class="big-num">${n ? `今天要学 <b>${n}</b> 句` : (t.todayCount ? '今天的学完了 🎉' : '今天没有要学的')}</div>
-        <div class="faint">${n ? `复习 ${t.dueCount} 句 · 新句子 ${t.newCount} 句` : '可以去「连续听」或「磨耳朵」再听一遍'}</div>
-      </div>
-      <div class="streak" title="连续学习天数"><b>${t.streak}</b><span>连续天数</span></div>
+    <div class="grow">
+      <div class="t">${n ? `今天要学 <b>${n}</b> 句` : (t.todayCount ? '今天的学完了' : '今天没有要学的')}</div>
+      <div class="faint ellipsis">${sub}</div>
     </div>
-    <div class="week">${t.week.map(d => `<div class="day ${d.day === t.today ? 'now' : ''}"><i style="height:${Math.round(d.count / max * 100)}%" title="${d.count} 句"></i><span>${wd[new Date(d.day + 'T12:00:00').getDay()]}</span></div>`).join('')}</div>
-    <div class="row" style="margin-top:10px">
-      <button class="btn primary big grow" id="goToday" ${n ? '' : 'disabled'}>${n ? '开始今天的学习' : '已完成'}</button>
-      <span class="faint">今天 ${t.todayCount} 句 · 约 ${t.minutes} 分钟</span>
-    </div>
+    <div class="spark" title="最近 7 天学了多少句">${t.week.map(d => `<i class="${d.count ? 'has' : ''} ${d.day === t.today ? 'now' : ''}" style="height:${Math.round(d.count / max * 100)}%" title="周${wd[new Date(d.day + 'T12:00:00').getDay()]} ${d.count} 句"></i>`).join('')}</div>
+    ${n ? '<button class="btn primary big" id="goToday">开始 ›</button>' : ''}
   </div>`
 }
 function bindToday() { const b = $('#goToday'); if (b) b.onclick = () => go('#/today') }
 
-function lessonCard(l) {
+function lessonRow(l) {
   const s = l.stats
   const pct = s.total ? Math.round(s.mastered / s.total * 100) : 0
   const seenPct = s.total ? Math.round(s.seen / s.total * 100) : 0
@@ -423,11 +432,17 @@ function lessonCard(l) {
     paused: '<span class="badge warn">已暂停</span>',
     error: '<span class="badge err">出错</span>',
   }[l.status] || (s.due ? `<span class="badge">待复习 ${s.due}</span>` : (s.total && s.mastered === s.total ? '<span class="badge ok">已掌握</span>' : ''))
-  return `<div class="card lesson" data-id="${esc(l.id)}">
-    <div class="row"><div class="grow"><div class="t"><span class="kind ${l.kind === 'doc' ? 'doc' : ''}">${l.kind === 'doc' ? '文档' : '音频'}</span>${esc(l.titleZh || l.title)}</div>${l.titleZh ? `<div class="en">${esc(l.title)}</div>` : ''}</div>${badge}</div>
-    <div class="faint" style="margin:6px 0">${fmtDur(l.duration)} · ${l.sentences} 句${l.translated < l.sentences ? ` · 已翻译 ${l.translated}` : ''} · 学过 ${s.seen} · 掌握 ${s.mastered}/${s.total}${s.nextDue && !s.due ? ` · 下次复习 ${when(s.nextDue)}` : ''}</div>
-    <div class="bar two"><i class="seen" style="width:${seenPct}%"></i><i style="width:${pct}%"></i></div>
-    ${l.error ? `<div class="small" style="color:var(--bad);margin-top:6px">${esc(l.error)}</div>` : ''}
+  const doc = l.kind === 'doc'
+  return `<div class="lrow ${doc ? 'doc' : ''}" data-id="${esc(l.id)}" title="${esc(l.title)}">
+    <span title="${doc ? '文档转的音频' : '导入的音频'}" style="display:flex">${ico(doc ? 'doc' : 'audio')}</span>
+    <div class="grow">
+      <div class="t ellipsis">${esc(l.titleZh || l.title)}</div>
+      <div class="m ellipsis">${fmtDur(l.duration)} · ${l.sentences} 句${l.translated < l.sentences ? ` · 已翻译 ${l.translated}` : ''} · 掌握 ${s.mastered}/${s.total}${s.nextDue && !s.due ? ` · ${when(s.nextDue)}复习` : ''}</div>
+      ${l.error ? `<div class="err ellipsis">${esc(l.error)}</div>` : ''}
+    </div>
+    ${badge}
+    <div class="bar two prog" title="学过 ${s.seen} · 掌握 ${s.mastered} / ${s.total}"><i class="seen" style="width:${seenPct}%"></i><i style="width:${pct}%"></i></div>
+    <span class="chev">›</span>
   </div>`
 }
 
@@ -472,24 +487,23 @@ async function renderVps() {
   if (!v.enabled || (!v.config && !v.hosts.length)) { box.innerHTML = ''; return }
   const c = v.config
   const editing = !c || box.dataset.edit === '1'
-  box.innerHTML = `<div class="card" id="vps">
-    <h3>手机学习（VPS）</h3>
+  box.innerHTML = `<div class="section-title">手机上学</div><div class="card" id="vps">
     ${!editing ? `
-      <div class="small">发到：<b>${esc(c.domain || c.host)}</b> <span class="faint">（SSH ${esc(c.host)} · 用户 ${esc(c.user)}）</span></div>
-      ${v.url ? `<div class="row" style="margin-top:8px"><span class="faint">手机打开：</span><a class="link ellipsis grow" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a><button class="btn ghost" id="copyUrl">复制</button></div>` : ''}
-      <div class="row" style="margin-top:10px">
-        <button class="btn primary" id="sendAll">全部发送到 VPS</button>
-        <button class="btn ghost" id="vpsEdit">改设置</button>
+      <div class="row nowrap">${ico('phone')}
+        <div class="grow"><div class="ellipsis"><b>${esc(c.domain || c.host)}</b> <span class="faint">SSH ${esc(c.host)} · 用户 ${esc(c.user)}</span></div></div>
+        <button class="btn primary small" id="sendAll" title="把全部课程发到 VPS；只发课程内容和声音，不会覆盖那边的学习进度">全部发送</button>
+        <button class="btn ghost small" id="vpsEdit">设置</button>
       </div>
-      <div class="faint" style="margin-top:6px">只发课程内容和声音，不会覆盖 VPS 上的学习进度。每课页面的「管理」里也能单独发送。VPS 上的 DSH 要装好「听懂」插件。</div>` : `
+      ${v.url ? `<div class="row nowrap" style="margin-top:6px"><span class="faint">手机打开</span><a class="link ellipsis grow" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a><button class="btn ghost small" id="copyUrl">复制</button></div>` : ''}
+      <div class="faint" style="margin-top:4px">只发课程和声音，不覆盖 VPS 上的学习进度；每课的「管理」里也能单独发送。</div>` : `
       <div class="faint">在电脑上做好课，发到 VPS 上的 DSH，手机打开就能学。这台电脑要能用 SSH 钥匙登录 VPS（dsh-vps-manager 添加机器时会自动配好）。</div>
-      <div class="row" style="margin-top:8px">
+      <div class="row" style="margin-top:6px">
         <span class="faint">SSH 主机</span>
         <select id="vpsHost">${v.hosts.map(h => `<option ${c && c.host === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select>
         <button class="btn" id="vpsDetect">查找 VPS 上的 DSH</button>
+        ${c ? '<button class="btn ghost" id="vpsCancel">取消</button>' : ''}
       </div>
-      <div id="vpsFound">${vpsFound ? foundList(vpsFound) : ''}</div>
-      ${c ? '<button class="btn ghost" id="vpsCancel" style="margin-top:8px">取消</button>' : ''}`}
+      <div id="vpsFound">${vpsFound ? foundList(vpsFound) : ''}</div>`}
   </div>`
   const on = (sel, fn) => { const el = box.querySelector(sel); if (el) el.onclick = fn }
   on('#vpsEdit', () => { box.dataset.edit = '1'; renderVps() })
@@ -512,11 +526,11 @@ async function renderVps() {
 
 function foundList(f) {
   if (!f.instances.length) return '<div class="small" style="color:var(--bad);margin-top:8px">这台 VPS 上没找到正在运行的 DSH 网页版。先用 dsh-vps 装好 DSH。</div>'
-  return `<div style="margin-top:10px">${f.instances.map((x, k) => `
-    <div class="row inst">
+  return `<div style="margin-top:6px">${f.instances.map((x, k) => `
+    <div class="row nowrap inst">
       <div class="grow"><b>${esc(x.domain || `端口 ${x.port}`)}</b> <span class="faint">用户 ${esc(x.user)} · ${esc(x.home)}</span>
-        <div class="faint">${x.hasPlugin ? '✓ 已装「听懂」插件' : '还没装「听懂」插件'}</div></div>
-      <button class="btn primary" data-pick="${k}">用这个</button>
+        <div class="faint">${x.hasPlugin ? '已装「听懂」插件' : '还没装「听懂」插件'}</div></div>
+      <button class="btn primary small" data-pick="${k}">用这个</button>
     </div>`).join('')}
     ${!f.root && f.instances.some(x => x.user !== f.sshUser) ? `<div class="faint">注意：SSH 用的是 ${esc(f.sshUser)}，和 DSH 的用户不同，可能没有权限写进去。</div>` : ''}</div>`
 }
@@ -586,12 +600,13 @@ function bindVoiceBar() {
 function manageButtons(l) {
   const missing = (l.sentences || []).some(s => !s.zh && !s.skip) || (l.sentences.length && !l.summaryZh) || l.status === 'error' || l.status === 'paused'
   const canWork = !S.status || S.status.ffmpeg
-  return `<div class="row" style="margin-top:10px">
-    ${S.vps && S.vps.config && l.status === 'ready' ? `<button class="btn primary" data-act="send">发送到 VPS</button>` : ''}
-    ${missing && canWork ? '<button class="btn" data-act="resume">补全翻译</button>' : ''}
-    ${l.sentences && l.sentences.length && canWork ? '<button class="btn ghost" data-act="retranslate">重新翻译</button>' : ''}
-    <button class="btn ghost" data-act="reset">重置进度</button>
-    <button class="btn ghost danger" data-act="delete">删除这课</button>
+  return `<div class="row manage-row">
+    <span class="faint">管理</span>
+    ${S.vps && S.vps.config && l.status === 'ready' ? `<button class="btn small" data-act="send">发送到 VPS</button>` : ''}
+    ${missing && canWork ? '<button class="btn small" data-act="resume">补全翻译</button>' : ''}
+    ${l.sentences && l.sentences.length && canWork ? '<button class="btn ghost small" data-act="retranslate">重新翻译</button>' : ''}
+    <button class="btn ghost small" data-act="reset">重置进度</button>
+    <button class="btn ghost small danger" data-act="delete">删除这课</button>
   </div>`
 }
 
@@ -618,39 +633,44 @@ function bindManage(root, l) {
 function paneOverview(pane, l, st) {
   const pos = getPos()
   const stars = (S.cur.progress.stars || []).length
+  const doc = l.kind === 'doc'
   pane.innerHTML = `
-    <div class="card">
-      ${l.titleZh ? `<div style="font-weight:600">${esc(l.titleZh)}</div><div class="faint">${esc(l.title)}</div>` : `<div style="font-weight:600">${esc(l.title)}</div>`}
-      <div class="faint" style="margin-top:2px">${l.kind === 'doc' ? `文档 · 朗读：${esc(l.voiceLabel || 'AI')} · ` : ''}${fmtDur(l.duration)} · ${l.sentences.length} 句${l.model ? ` · 翻译：${esc(l.model)}` : ''}</div>
-      ${l.source && l.source.docId ? `<div class="faint" style="margin-top:2px">原文档：${esc(l.source.name)} · <a class="link" href="doc/file?id=${l.source.docId}&which=original" download>下载原文件</a> · <a class="link" href="doc/file?id=${l.source.docId}&which=clean" download>整理后的文字</a></div>` : ''}
-      ${l.summaryZh ? `<p class="summary">${esc(l.summaryZh)}</p>` : ''}
+    <div class="card lesson-head">
+      <div class="title">${esc(l.titleZh || l.title)}</div>
+      ${l.titleZh ? `<div class="faint">${esc(l.title)}</div>` : ''}
+      <div class="faint">${doc ? `文档 · 朗读：${esc(l.voiceLabel || 'AI')} · ` : ''}${fmtDur(l.duration)} · ${l.sentences.length} 句${l.model ? ` · 翻译：${esc(l.model)}` : ''}</div>
+      ${l.source && l.source.docId ? `<div class="faint">原文档：${esc(l.source.name)} · <a class="link" href="doc/file?id=${l.source.docId}&which=original" download>原文件</a> · <a class="link" href="doc/file?id=${l.source.docId}&which=clean" download>整理后的文字</a></div>` : ''}
+      ${l.summaryZh ? `<p class="summary clamp" id="summary" title="点一下展开">${esc(l.summaryZh)}</p>` : ''}
       ${l.note ? `<div class="small" style="color:var(--mid)">${esc(l.note)}</div>` : ''}
       ${l.status === 'error' ? `<div class="small" style="color:var(--bad)">${esc(l.error)}</div>` : ''}
-    </div>
-    ${l.kind === 'doc' && S.cur.lesson.sentences.length ? docAudioCard(l) : ''}
-    <div class="card">
-      <div class="stat-grid">
-        <div><b>${st.fresh}</b><span>没学过</span></div>
-        <div><b>${st.learning}</b><span>学习中</span></div>
-        <div><b style="color:var(--good)">${st.mastered}</b><span>已掌握</span></div>
-        <div><b style="color:var(--accent)">${st.due}</b><span>待复习</span></div>
+      <div class="statline">
+        <span><b>${st.fresh}</b>没学过</span><span><b>${st.learning}</b>学习中</span>
+        <span><b style="color:var(--good)">${st.mastered}</b>已掌握</span><span><b style="color:var(--accent)">${st.due}</b>待复习</span>
+        ${stars ? `<span title="在「复习」或「磨耳朵」里选「收藏」专门练"><b style="color:var(--mid)">${stars}</b>难句</span>` : ''}
       </div>
       <div class="bar good"><i style="width:${st.total ? Math.round(st.mastered / st.total * 100) : 0}%"></i></div>
-      <div class="row" style="margin-top:12px">
-        <button class="btn primary big" id="goStudy">${pos > 0 ? `继续精听（第 ${pos + 1} 句）` : '开始精听'}</button>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary big" id="goStudy">${pos > 0 ? `继续精听 · 第 ${pos + 1} 句` : '开始精听'}</button>
         <button class="btn big" id="goReview" ${st.due || st.fresh ? '' : 'disabled'}>复习${st.due ? ` ${st.due} 句` : ''}</button>
         <button class="btn big" id="goDrill">磨耳朵</button>
+        ${!st.due && st.nextDue ? `<span class="faint">下一批复习 ${when(st.nextDue)}</span>` : ''}
       </div>
-      ${!st.due && st.nextDue ? `<div class="faint" style="margin-top:6px">下一批复习：${when(st.nextDue)}</div>` : ''}
-      ${stars ? `<div class="faint" style="margin-top:6px">难句本：收藏了 ${stars} 句，在「复习」或「磨耳朵」里选「收藏」专门练。</div>` : ''}
+    </div>
+    ${doc ? `<div class="card"><div class="row"><b>下载转好的音频</b><span class="faint grow">存到本地，放手机或播放器上听</span></div>
+      <div class="row" style="margin-top:6px">${docAudioButtons(l)}</div></div>` : ''}
+    <div class="flows" style="margin-bottom:8px">
+      <button class="flow" id="goExport">
+        ${ico('down')}
+        <span class="grow">
+          <span class="flow-line"><span>导出到本地</span></span>
+          <span class="faint">${doc ? '朗读音频（MP3）' : '英文音频（去空白 / 朗读版）'} · 带时间的字幕（SRT / LRC）· 时间对齐的中文配音</span>
+        </span>
+        <span class="cta">去导出 ›</span>
+      </button>
     </div>
     ${voicesCard(l)}
-    <div class="card row">
-      <div class="grow"><b>导出</b><div class="faint">中文配音（MP3）、双语字幕、LRC 歌词、录音稿</div></div>
-      <button class="btn" id="goExport">去导出 ›</button>
-    </div>
-    <div class="card">
-      <h3>怎么练到「一听就懂」</h3>
+    <details class="card">
+      <summary class="row nowrap"><b class="grow">怎么练到「一听就懂」</b><span class="faint">展开</span></summary>
       <ol class="steps">
         <li><b>精听</b>：每句先<b>只听不看</b>，猜意思 → 看英文，找出没听出来的词（点词看意思）→ 看中文和生词 → 再听一遍。</li>
         <li>老实自评：<span class="g0">没听懂</span> / <span class="g1">半懂</span> / <span class="g2">听懂了</span>；拿不准的点 ☆ 收进难句本。</li>
@@ -659,9 +679,11 @@ function paneOverview(pane, l, st) {
         <li><b>连续听</b>：选「原声·去空白」一句接一句不停地听；先用朗读的声音听清每个词，再回到原声；最后关掉字幕，能跟上就是真听懂了。</li>
       </ol>
       <div class="faint" style="margin-top:6px">电脑快捷键：空格 重听 · 回车 下一步 · 1/2/3 评分 · ←/→ 换句 · S 变速 · L 循环。手机上左右滑动换句。</div>
-    </div>
-    <div class="card"><h3>管理</h3>${manageButtons(l)}</div>`
+    </details>
+    ${manageButtons(l)}`
   bindVoices(pane, l)
+  const sum = $('#summary')
+  if (sum) sum.onclick = () => sum.classList.toggle('clamp')
   $('#goExport').onclick = () => go(`#/l/${l.id}/export`)
   $('#goStudy').onclick = () => go(`#/l/${l.id}/study`)
   $('#goReview').onclick = () => go(`#/l/${l.id}/review`)
@@ -670,19 +692,13 @@ function paneOverview(pane, l, st) {
 }
 
 /** 文档课：下载朗读音频（这一课 / 整篇） */
-function docAudioCard(l) {
+function docAudioButtons(l) {
   const same = S.lessons.filter(x => x.docId && l.source && x.docId === l.source.docId)
   const waiting = same.filter(x => !x.hasAudio).length
-  return `<div class="card">
-    <h3>下载音频</h3>
-    <div class="faint">把文档转成的音频下载成 MP3，放到手机或播放器上听（朗读：${esc(l.voiceLabel || 'AI')}）。</div>
-    <div class="row" style="margin-top:8px">
-      <a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=full&download=1" download>这一课 MP3（${fmt(l.duration)}）</a>
-      ${same.length > 1 ? (waiting
-        ? `<span class="faint">整篇 ${same.length} 课，还有 ${waiting} 课在转音频，做好后可以合成一个下载</span>`
-        : `<a class="btn" href="doc/audio?id=${l.source.docId}" download>整篇 ${same.length} 课合成一个 MP3</a>`) : ''}
-    </div>
-  </div>`
+  return `<a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=full&download=1" download>${ico('down')}这一课 MP3 · ${fmt(l.duration)}</a>
+    ${same.length > 1 ? (waiting
+      ? `<span class="faint">整篇 ${same.length} 课，还有 ${waiting} 课在转音频</span>`
+      : `<a class="btn" href="doc/audio?id=${l.source.docId}" download>${ico('down')}整篇 ${same.length} 课合成一个 MP3</a>`) : ''}`
 }
 
 // —— 概览里的「声音」卡片：每种声音一行：状态、选用、试听、生成、下载 ——
@@ -716,25 +732,25 @@ function voicesCard(l) {
       ? opts(((v.kokoro && v.kokoro.voices) || []), (meta && meta.voice) || 'am_michael')
       : opts(sayList, (meta && meta.voice) || (sayList[0] && sayList[0].id))}</select>
       <select data-speed="${name}">${speeds((meta && meta.speed) || 0.9)}</select>` : ''
-    return `<div class="track ${name === t ? 'on' : ''}">
-      <div class="row"><b class="grow">${esc(trackLabel(name))}</b>
-        ${meta ? `<span class="faint">${fmt(meta.duration)}${meta.voice ? ' · ' + esc(meta.voice) : ''}</span>` : '<span class="faint">未生成</span>'}</div>
-      <div class="faint">${name === 'full' && isDoc() ? '文档转音频时 AI 朗读生成的音频' : TRACK_NOTES[name]}${name === 'kokoro' && v.kokoro && !v.kokoro.ready && canMake ? '；第一次生成会下载约 103 MB 语音模型' : ''}</div>
-      ${stale ? '<div class="small" style="color:var(--mid)">句子改过了，这条声音对不上了，建议重新生成</div>' : ''}
-      ${job ? `<div class="small muted" style="margin-top:4px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : `
-      <div class="row" style="margin-top:6px">
-        ${meta ? (name === t ? '<span class="badge ok">正在用</span>' : `<button class="btn" data-use="${name}">选用</button>`) : ''}
-        ${meta ? `<button class="btn ghost" data-try="${name}">▶ 试听</button>` : ''}
-        ${meta ? `<a class="btn ghost" href="audio?id=${encodeURIComponent(l.id)}&track=${name}&download=1" download>下载 MP3</a>` : ''}
-        ${voiceSel}
-        ${name !== 'full' && canMake ? `<button class="btn ${meta ? 'ghost' : 'primary'}" data-make="${name}">${meta ? '重新生成' : '生成'}</button>` : ''}
-      </div>`}
+    const note = (name === 'full' && isDoc() ? '文档转音频时 AI 朗读生成的音频' : TRACK_NOTES[name]) + (name === 'kokoro' && v.kokoro && !v.kokoro.ready && canMake ? '；第一次生成会下载约 103 MB 语音模型' : '')
+    const make = name !== 'full' && canMake
+    return `<div class="track ${name === t ? 'on' : ''}" title="${esc(note)}">
+      <span class="name">${esc(trackLabel(name))}</span>
+      ${meta ? `<span class="faint">${fmt(meta.duration)}</span>` : ''}
+      <span class="faint grow ellipsis">${meta && meta.voice ? esc(meta.voice) + ' · ' : ''}${esc(note)}</span>
+      ${job ? `<span class="small muted">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</span>` : `
+        ${meta ? (name === t ? '<span class="badge ok">正在用</span>' : `<button class="btn small" data-use="${name}">选用</button>`) : ''}
+        ${meta ? `<button class="btn ghost small" data-try="${name}" title="试听">▶</button>` : ''}
+        ${meta ? `<a class="btn ghost small" href="audio?id=${encodeURIComponent(l.id)}&track=${name}&download=1" download title="下载 MP3 到本地">${ico('down')}</a>` : ''}
+        ${make && !tts ? `<button class="btn small ${meta ? 'ghost' : 'primary'}" data-make="${name}">${meta ? '重做' : '生成'}</button>` : ''}
+        ${make && tts ? `<div class="opts">${voiceSel}<button class="btn small ${meta ? 'ghost' : 'primary'}" data-make="${name}">${meta ? '重新生成' : '生成'}</button></div>` : ''}`}
+      ${stale ? '<div class="small" style="color:var(--mid);flex-basis:100%">句子改过了，这条声音对不上了，建议重新生成</div>' : ''}
     </div>`
   }
-  return `<div class="card" id="voices"><h3>声音</h3>
-    <div class="faint" style="margin-bottom:6px">同样的句子，换一种声音听。去空白和朗读的声音都可以不停顿地连续听，也能下载到手机。</div>
+  return `<div class="card" id="voices">
+    <div class="row nowrap" style="margin-bottom:2px"><b>声音</b><span class="faint grow ellipsis">同样的句子换一种声音听，都能下载到本地</span></div>
     ${TRACK_ORDER.map(row).join('')}
-    ${canMake && v.sayHint && (v.say || []).length && (v.say || []).every(x => x.quality < 2) ? `<div class="faint" style="margin-top:8px">💡 ${esc(v.sayHint)}</div>` : ''}
+    ${canMake && v.sayHint && (v.say || []).length && (v.say || []).every(x => x.quality < 2) ? `<div class="faint" style="margin-top:6px">${esc(v.sayHint)}</div>` : ''}
   </div>`
 }
 
@@ -795,14 +811,37 @@ function zhCard(l) {
   const edgeMissing = engine === 'edge' && !(V.edge && V.edge.ready)
   const alignChips = attr => `<button class="chip ${align === 'full' ? 'on' : ''}" data-${attr}="full">原音频（${fmt(l.duration)}）</button>
     ${clean ? `<button class="chip ${align === 'clean' ? 'on' : ''}" data-${attr}="clean">原声·去空白（${fmt(clean.duration)}）</button>` : ''}`
-  return `<div class="card" id="zhCard"><h3>导出</h3>
-    <div class="sub-h">中文配音（音频）</div>
+  const doc = l.kind === 'doc'
+  const id = encodeURIComponent(l.id)
+  // 三步，顺序就是流水线：音频课「字幕 → 中文配音 → 英文音频」，文档课「朗读音频 → 字幕 → 中文配音」
+  const audioCard = n => `<div class="card">
+    <div class="exp-h"><span class="num">${n}</span><b>${doc ? '朗读音频' : '英文音频'}</b><span class="faint">${doc ? '文档转好的音频，存到本地' : '换一种声音的版本，存到本地'}</span></div>
+    <div class="row">${doc ? docAudioButtons(l) : TRACK_ORDER.filter(x => x === 'full' || S.cur.tracks[x]).map(x => {
+      const m = x === 'full' ? { duration: l.duration } : S.cur.tracks[x]
+      return `<a class="btn" href="audio?id=${id}&track=${x}&download=1" download>${ico('down')}${esc(trackLabel(x))} · ${fmt(m.duration)}</a>`
+    }).join('')}</div>
+    ${doc ? '' : '<div class="faint" style="margin-top:4px">「去空白」「朗读」这些版本在「概览 → 声音」里生成。</div>'}
+  </div>`
+  const textCard = n => `<div class="card">
+    <div class="exp-h"><span class="num">${n}</span><b>带时间的字幕</b><span class="faint">每句英文、中文对译和它的起止时间</span></div>
+    <div class="form" style="margin-top:4px">
+      <label>时间按</label><div class="chips">${alignChips('txalign')}</div>
+      <label>下载</label><div class="row wrap">${TEXT_FORMATS.map(([f, name]) => `<a class="btn" data-fmt="${f}" href="export?id=${id}&format=${f}&align=${align}" download>${name}</a>`).join('')}</div>
+    </div>
+    <div class="faint" style="margin-top:4px">想自己录中文：下载「录音稿」，每句标了开始时间和可用时长。</div>
+  </div>`
+  const steps = doc ? ['文档', '朗读音频', '带时间的字幕', '中文配音'] : ['英文音频', '带时间的字幕', '中文配音']
+  return `<div id="zhCard">
+    <div class="pipe">${steps.map((s, k) => `${k ? '<span class="arr">→</span>' : ''}<b>${s}</b>`).join('')}<span>每一步的成品都能下载到本地</span></div>
+    ${doc ? audioCard(1) + textCard(2) : textCard(1)}
+    <div class="card">
+    <div class="exp-h"><span class="num">${doc ? 3 : 2}</span><b>中文配音</b><span class="faint">和英文同一时间的中文音频</span></div>
     <div class="faint">只有中文、没有背景音，每句中文从对应英文开始的时刻开始说；比空档长的句子会读快一点，不会挤到下一句。</div>
-    ${meta ? `<div class="row" style="margin-top:8px"><span class="badge ok">已生成</span><span class="faint grow">${esc(meta.voiceLabel || meta.voice)} · ${meta.align === 'clean' ? '对齐原声·去空白' : '对齐原音频'} · ${fmt(meta.duration)}${meta.squeezed ? ` · ${meta.squeezed} 句读快了一点` : ''}</span></div>
+    ${meta ? `<div class="row nowrap" style="margin-top:6px"><span class="badge ok">已生成</span><span class="faint grow ellipsis">${esc(meta.voiceLabel || meta.voice)} · ${meta.align === 'clean' ? '对齐原声·去空白' : '对齐原音频'} · ${fmt(meta.duration)}${meta.squeezed ? ` · ${meta.squeezed} 句读快了一点` : ''}</span></div>
       <div class="row" style="margin-top:6px">
         <button class="btn" id="zhPlay">▶ 试听</button>
-        <a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=zh&download=1" download>下载 MP3</a>
-        ${meta.flac ? `<a class="btn primary" href="audio?id=${encodeURIComponent(l.id)}&track=zh&fmt=flac&download=1" download>下载 FLAC（无损）</a>` : '<span class="faint">要 FLAC：重新生成一次</span>'}
+        <a class="btn primary" href="audio?id=${id}&track=zh&download=1" download>${ico('down')}MP3</a>
+        ${meta.flac ? `<a class="btn primary" href="audio?id=${id}&track=zh&fmt=flac&download=1" download>${ico('down')}FLAC（无损）</a>` : '<span class="faint">要 FLAC：重新生成一次</span>'}
       </div>` : ''}
     ${job ? `<div class="small muted" style="margin-top:8px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : canMake ? `
       <div class="form">
@@ -816,14 +855,10 @@ function zhCard(l) {
         <label>语速</label><div class="chips">${[0.9, 1, 1.1].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-zhspeed="${x}">${x === 1 ? '正常' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>
         <label>时间对齐</label><div class="chips">${alignChips('zhalign')}</div>`}
       </div>
-      ${edgeMissing ? '' : `<div class="faint" style="margin:6px 0 10px">对齐原音频：总长和原音频一样，可以和原音频对着听；对齐去空白：和「原声·去空白」一句对一句。${engine === 'kokoro' && !(V.zh && V.zh.ready) ? '第一次会先下载约 147 MB 中文语音模型。' : ''}${engine === 'edge' && V.edge && V.edge.version ? ` Edge 组件 ${esc(V.edge.version)}，<a href="#" class="link" id="edgeUpdate">更新</a>。` : ''}</div>
+      ${edgeMissing ? '' : `<div class="faint" style="margin:6px 0 8px">对齐原音频：总长和原音频一样，可以和原音频对着听；对齐去空白：和「原声·去空白」一句对一句。${engine === 'kokoro' && !(V.zh && V.zh.ready) ? '第一次会先下载约 147 MB 中文语音模型。' : ''}${engine === 'edge' && V.edge && V.edge.version ? ` Edge 组件 ${esc(V.edge.version)}，<a href="#" class="link" id="edgeUpdate">更新</a>。` : ''}</div>
       <button class="btn ${meta ? 'ghost' : 'primary'}" id="zhMake">${meta ? '换音色重新生成' : '生成中文配音'}</button>`}` : ''}
-    <div class="sub-h" style="margin-top:16px">文字（字幕 / 歌词 / 录音稿）</div>
-    <div class="faint">英文原文和中文对译，带时间。想自己录中文配音，就下载「录音稿」：每句标了开始时间和可用时长。</div>
-    <div class="form">
-      <label>时间按</label><div class="chips">${alignChips('txalign')}</div>
-      <label>下载</label><div class="row wrap">${TEXT_FORMATS.map(([f, name]) => `<a class="btn ghost" data-fmt="${f}" href="export?id=${encodeURIComponent(l.id)}&format=${f}&align=${align}" download>${name}</a>`).join('')}</div>
     </div>
+    ${doc ? '' : audioCard(3)}
   </div>`
 }
 
