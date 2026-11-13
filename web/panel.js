@@ -794,21 +794,46 @@ function paneExport(pane, l) {
 
 const TEXT_FORMATS = [['srt-bi', '双语字幕'], ['srt-en', '英文字幕'], ['srt-zh', '中文字幕'], ['lrc', '歌词 LRC'], ['script', '录音稿'], ['csv', '表格']]
 
+/** 中文配音用哪种语音：kokoro / edge / ming（这台电脑用不了 Ming 就退回 Kokoro） */
+const ZH_VOICE_KEY = { kokoro: 'zhVoice', edge: 'zhVoiceEdge', ming: 'zhVoiceMing' }
+function zhEngineNow() {
+  const meta = S.cur.tracks.zh
+  const V = S.voices || {}
+  const e = store.get('zhEngine', (meta && meta.engine) || 'kokoro')
+  return e === 'ming' && !(V.ming && V.ming.supported) ? 'kokoro' : (ZH_VOICE_KEY[e] ? e : 'kokoro')
+}
+
+/** 本机 Ming 还没装好时：说明 + 安装按钮，或者安装进度 */
+function mingSetup(m) {
+  if (m.installing) {
+    const x = m.installing
+    const pct = x.total ? Math.round(x.done / x.total * 100) : 0
+    return `<div class="small muted">${esc(x.step)}${x.total ? ` · ${Math.round(x.done / 1048576)} / ${Math.round(x.total / 1048576)} MB` : ''}…</div>
+      ${x.total ? `<div class="bar" style="margin-top:4px"><i style="width:${pct}%"></i></div>` : ''}
+      <div class="faint" style="margin-top:4px">在后台装，可以先去做别的；装好后这里会变成选音色。</div>`
+  }
+  return `<div class="faint">Mac 本机 Ming：在 Apple 芯片上离线合成，声音自然，不联网、不花钱。要先装一次：约 450 MB 程序 + 1.6 GB 声音模型（和 dsh-her 的本机 Ming 是同一个，装过 dsh-her 的就不用再下）。生成时占约 2 GB 内存。</div>
+    ${m.error ? `<div class="small" style="color:var(--bad);margin-top:4px">${esc(m.error)}</div>` : ''}
+    <button class="btn" id="mingInstall" style="margin-top:6px">安装本机 Ming（约 2 GB）</button>`
+}
+
 function zhCard(l) {
   if (!l.sentences || !l.sentences.length) return ''
   const meta = S.cur.tracks.zh
   const canMake = !S.status || S.status.ffmpeg
   const V = S.voices || {}
-  const engine = store.get('zhEngine', (meta && meta.engine) || 'kokoro')
-  const list = engine === 'edge' ? ((V.edge && V.edge.voices) || []) : ((V.zh && V.zh.voices) || [])
+  const engine = zhEngineNow()
+  const list = engine === 'edge' ? ((V.edge && V.edge.voices) || []) : engine === 'ming' ? ((V.ming && V.ming.voices) || []) : ((V.zh && V.zh.voices) || [])
   const job = S.jobs.find(j => j.lessonId === l.id && j.kind === 'track' && j.track === 'zh' && (j.state === 'running' || j.state === 'queued'))
-  const selKey = engine === 'edge' ? 'zhVoiceEdge' : 'zhVoice'
+  const selKey = ZH_VOICE_KEY[engine]
   const sel = (meta && meta.engine === engine && meta.voice) || store.get(selKey, list[0] && list[0].id)
   const speed = (meta && meta.speed) || store.get('zhSpeed', 1)
   const clean = S.cur.tracks.clean
   const align = store.get('zhAlign', (meta && meta.align) || 'full')
   const group = (g, name) => `<optgroup label="${name}">${list.filter(x => x.gender === g).map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</optgroup>`
   const edgeMissing = engine === 'edge' && !(V.edge && V.edge.ready)
+  const mingMissing = engine === 'ming' && !(V.ming && V.ming.ready)
+  const missing = edgeMissing || mingMissing
   const alignChips = attr => `<button class="chip ${align === 'full' ? 'on' : ''}" data-${attr}="full">原音频（${fmt(l.duration)}）</button>
     ${clean ? `<button class="chip ${align === 'clean' ? 'on' : ''}" data-${attr}="clean">原声·去空白（${fmt(clean.duration)}）</button>` : ''}`
   const doc = l.kind === 'doc'
@@ -846,16 +871,17 @@ function zhCard(l) {
     ${job ? `<div class="small muted" style="margin-top:8px">${job.state === 'queued' ? '排队中' : esc(job.stage)}${job.total ? ` ${job.done}/${job.total}` : ''}…</div>` : canMake ? `
       <div class="form">
         <label>语音</label><div class="chips">
-          <button class="chip ${engine === 'kokoro' ? 'on' : ''}" data-zhengine="kokoro">本地 Kokoro（100 种，离线）</button>
-          <button class="chip ${engine === 'edge' ? 'on' : ''}" data-zhengine="edge">微软 Edge（14 种，要联网）</button>
+          <button class="chip ${engine === 'kokoro' ? 'on' : ''}" data-zhengine="kokoro" title="100 种声音，离线">Kokoro（离线）</button>
+          <button class="chip ${engine === 'edge' ? 'on' : ''}" data-zhengine="edge" title="14 种声音，要联网">微软 Edge（联网）</button>
+          ${V.ming && V.ming.supported ? `<button class="chip ${engine === 'ming' ? 'on' : ''}" data-zhengine="ming" title="${V.ming.voices.length} 种声音，Apple 芯片上离线合成">Mac 本机 Ming</button>` : ''}
         </div>
-        ${edgeMissing ? `<label></label><div><div class="faint">Edge 语音要先装一个小组件（edge-tts，约 15 MB，装在插件自己的目录里，需要电脑上有 Python 3）。用的时候中文会发到微软的服务器；这不是微软公开的正式接口，以后可能失效。</div>
+        ${mingMissing ? `<label></label><div>${mingSetup(V.ming)}</div>` : edgeMissing ? `<label></label><div><div class="faint">Edge 语音要先装一个小组件（edge-tts，约 15 MB，装在插件自己的目录里，需要电脑上有 Python 3）。用的时候中文会发到微软的服务器；这不是微软公开的正式接口，以后可能失效。</div>
           <button class="btn" id="edgeInstall" style="margin-top:6px">安装 Edge 语音组件</button></div>` : `
         <label>音色</label><div class="row"><select id="zhVoice">${group('f', '女声')}${group('m', '男声')}</select><button class="btn ghost" id="zhTry">试听这个音色</button></div>
         <label>语速</label><div class="chips">${[0.9, 1, 1.1].map(x => `<button class="chip ${x === speed ? 'on' : ''}" data-zhspeed="${x}">${x === 1 ? '正常' : x < 1 ? '慢一点' : '快一点'}</button>`).join('')}</div>
         <label>时间对齐</label><div class="chips">${alignChips('zhalign')}</div>`}
       </div>
-      ${edgeMissing ? '' : `<div class="faint" style="margin:6px 0 8px">对齐原音频：总长和原音频一样，可以和原音频对着听；对齐去空白：和「原声·去空白」一句对一句。${engine === 'kokoro' && !(V.zh && V.zh.ready) ? '第一次会先下载约 147 MB 中文语音模型。' : ''}${engine === 'edge' && V.edge && V.edge.version ? ` Edge 组件 ${esc(V.edge.version)}，<a href="#" class="link" id="edgeUpdate">更新</a>。` : ''}</div>
+      ${missing ? '' : `<div class="faint" style="margin:6px 0 8px">对齐原音频：总长和原音频一样，可以和原音频对着听；对齐去空白：和「原声·去空白」一句对一句。${engine === 'kokoro' && !(V.zh && V.zh.ready) ? '第一次会先下载约 147 MB 中文语音模型。' : ''}${engine === 'ming' ? ` 本机 Ming 每句约 2 秒，一课要几分钟。${V.ming.shared ? '用的是 dsh-her 装好的本机 Ming。' : V.ming.own ? '<a href="#" class="link" id="mingRemove">卸载本机 Ming</a>（空出约 2 GB）。' : ''}` : ''}${engine === 'edge' && V.edge && V.edge.version ? ` Edge 组件 ${esc(V.edge.version)}，<a href="#" class="link" id="edgeUpdate">更新</a>。` : ''}</div>
       <button class="btn ${meta ? 'ghost' : 'primary'}" id="zhMake">${meta ? '换音色重新生成' : '生成中文配音'}</button>`}` : ''}
     </div>
     ${doc ? '' : audioCard(3)}
@@ -865,7 +891,7 @@ function zhCard(l) {
 function bindZh(root, l) {
   const card = root.querySelector('#zhCard')
   if (!card) return
-  const engine = () => store.get('zhEngine', (S.cur.tracks.zh && S.cur.tracks.zh.engine) || 'kokoro')
+  const engine = zhEngineNow
   let speed = (S.cur.tracks.zh && S.cur.tracks.zh.speed) || store.get('zhSpeed', 1)
   const rerender = () => { const box = document.createElement('div'); box.innerHTML = zhCard(l); card.replaceWith(box.firstElementChild); bindZh(root, l) }
   card.querySelectorAll('[data-zhengine]').forEach(b => { b.onclick = () => { store.set('zhEngine', b.dataset.zhengine); stopZhAudio(); rerender() } })
@@ -877,7 +903,28 @@ function bindZh(root, l) {
     b.onclick = () => { store.set('zhAlign', b.dataset.zhalign || b.dataset.txalign); rerender() }
   })
   const voiceSel = card.querySelector('#zhVoice')
-  if (voiceSel) voiceSel.onchange = () => store.set(engine() === 'edge' ? 'zhVoiceEdge' : 'zhVoice', voiceSel.value)
+  if (voiceSel) voiceSel.onchange = () => store.set(ZH_VOICE_KEY[engine()], voiceSel.value)
+  // 本机 Ming：安装在后台跑，装的时候每 2 秒看一次进度
+  const mingInst = card.querySelector('#mingInstall')
+  if (mingInst) mingInst.onclick = async () => {
+    mingInst.disabled = true
+    try { await api('ming/install', {}); S.voices = await api('voices'); rerender() } catch (e) { toast(e.message); mingInst.disabled = false }
+  }
+  if (S.voices && S.voices.ming && S.voices.ming.installing) {
+    setTimeout(async () => {
+      if (!card.isConnected) return
+      try { S.voices = await api('voices') } catch { /* 下次再看 */ }
+      if (!card.isConnected) return
+      if (S.voices.ming && S.voices.ming.ready) toast('本机 Ming 装好了')
+      rerender()
+    }, 2000)
+  }
+  const mingRm = card.querySelector('#mingRemove')
+  if (mingRm) mingRm.onclick = async e => {
+    e.preventDefault()
+    if (!confirm('卸载本机 Ming？会删掉它的程序和声音模型（约 2 GB）。已经生成的中文配音不受影响。')) return
+    try { await api('ming/uninstall', {}); S.voices = await api('voices'); rerender() } catch (err) { toast(err.message) }
+  }
   const install = async (btn) => {
     btn.disabled = true
     const old = btn.textContent
@@ -900,7 +947,7 @@ function bindZh(root, l) {
     player.stop()
     tryBtn.disabled = true
     const first = engine() === 'kokoro' && !(S.voices && S.voices.zh && S.voices.zh.ready)
-    tryBtn.textContent = first ? '第一次要下载中文语音模型，稍等…' : '正在生成试听…'
+    tryBtn.textContent = first ? '第一次要下载中文语音模型，稍等…' : engine() === 'ming' ? '正在加载本机 Ming，约 10 秒…' : '正在生成试听…'
     try {
       const r = await fetch('voice-sample', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-tingdong': '1' }, body: JSON.stringify({ engine: engine(), voice: voiceSel.value }) })
       if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || `试听失败（${r.status}）`)

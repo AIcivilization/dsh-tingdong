@@ -57,9 +57,10 @@ dsh plugin --profile desktop add github:AIcivilization/dsh-tingdong   # 源码�
 
 **导出**（每课的「导出」页签）：
 
-- **中文配音（音频）**：可以下载 **MP3** 或无损 **FLAC**（44.1 kHz / 16 位，和合成出来的原始音频同源，不是 MP3 转的）。把英文换成中文配音，只有中文、没有背景音，每句中文从对应英文开始的时刻开始说，总长和原音频一样（也可以对齐「原声·去空白」）。比空档长的句子自动读快一点（最快 1.6 倍），不会挤到下一句。两种语音可选：
+- **中文配音（音频）**：可以下载 **MP3** 或无损 **FLAC**（44.1 kHz / 16 位，和合成出来的原始音频同源，不是 MP3 转的）。把英文换成中文配音，只有中文、没有背景音，每句中文从对应英文开始的时刻开始说，总长和原音频一样（也可以对齐「原声·去空白」）。比空档长的句子自动读快一点（最快 1.6 倍），不会挤到下一句。三种语音可选：
   - **本地 Kokoro**：离线，55 个普通话女声、45 个普通话男声，每个都能先试听；第一次用时下载约 147 MB 模型
   - **微软 Edge**：晓晓、云希、云扬等 14 种（含台湾、粤语、方言），要联网。插件调用开源工具 [edge-tts](https://github.com/rany2/edge-tts)，点「安装 Edge 语音组件」会装进插件自己的 Python 虚拟环境（需要电脑上有 Python 3）。文字会发到微软的服务器；这不是微软公开的正式接口，可能失效
+  - **Mac 本机 Ming**：Ming-3.0-tts（inclusionAI，MIT）在 Apple 芯片上离线合成，13 种适合旁白的中文男女声（灵楷、灵阅川、灵朵儿、灵小雅……），不联网、不花钱；只支持 Apple 芯片、macOS 14 以上。和 [dsh-her](https://github.com/AIcivilization/dsh-her) 的「本机 Ming」是同一个：装过 dsh-her 的直接用它的；没装过就点「安装本机 Ming」，约 450 MB 程序（锁定版本和校验值）+ 1.6 GB 模型（逐个文件校验），装在 `~/.dsh/dsh-tingdong/ming/`。每句约 2 秒，生成时占约 2 GB 内存；数字会先写成汉字再念（「2个」念「两个」）
 - **文字**：双语 / 英文 / 中文字幕（SRT）、双语歌词 LRC（Walkman 等播放器滚动显示）、**录音稿**（每句的开始时间、英文时长、可用时长和中英对照，照着自己录中文配音）、表格 CSV。时间可按原音频或「原声·去空白」
 
 卡片右上角 ☆ 收藏，复习和磨耳朵里可以只练收藏的
@@ -137,7 +138,7 @@ node bin/dsh-tingdong.js voices all --track kokoro --voice am_michael   # 批量
 ## 数据
 
 都在 `~/.dsh/dsh-tingdong/lessons/<课程>/`：`lesson.json`（句子、翻译、讲解、查过的词）、`progress.json`（复习进度、学到第几句、选的声音、收藏）、`audio.mp3`（压缩成 64 kbps 单声道，原文件所在的移动硬盘拔掉也能听）、`tracks/`（各种声音和它们的时间表）。
-模型在 `~/.dsh/dsh-tingdong/models/`（Kokoro 英文、Kokoro 中文）；Edge 语音组件在 `~/.dsh/dsh-tingdong/edge-tts/`；识别模型优先复用 DSH 语音输入下好的。
+模型在 `~/.dsh/dsh-tingdong/models/`（Kokoro 英文、Kokoro 中文）；Edge 语音组件在 `~/.dsh/dsh-tingdong/edge-tts/`；本机 Ming 在 `~/.dsh/dsh-tingdong/ming/`（或复用 `~/.dsh-her/ming/`）；识别模型优先复用 DSH 语音输入下好的。
 DSH 插件和命令行版共用这份数据。
 
 ## 实测
@@ -156,7 +157,7 @@ npm test
 - `lib/translate.js` 校对 + 翻译 + 生词 + 听音提示；缺句自动缩小批次重试，失败的留空，之后可「补全翻译」
 - `lib/tracks.js` 声音轨：原声按句截取拼接；朗读交给 `lib/tts-worker.js` 子进程（Kokoro / macOS say），`lib/pcm.js` 统一拼接编码并出时间表
 - `lib/srs.js` 间隔复习；`lib/store.js` 原子写入的 JSON 存储；`lib/today.js` 今日学习（按用户时区算日期）
-- `lib/doc.js` 文档：切句、分章、整理要求；`lib/export.js` 文字导出；`lib/edge.js` Edge 语音组件（edge-tts）的安装和调用
+- `lib/doc.js` 文档：切句、分章、整理要求；`lib/export.js` 文字导出；`lib/edge.js` Edge 语音组件（edge-tts）的安装和调用；`lib/ming.js` 本机 Ming 的查找、安装、声音表，`python/ming_worker.py` 合成进程，`lib/spoken.js` 数字念法
 - `lib/drill.js` 磨耳朵音频；`lib/lookup.js` 点词查意思、重新讲解；`lib/vps.js` 经 SSH 发送到 VPS
 - `plugin/` DSH 宿主端（路由、AI 工具）和界面入口（右侧栏、设置）；路由先过 DSH 的 `connection.requestRejection()` 登录校验
 - `web/` 学习面板（原生 JS 模块，无构建）：`panel.js` 路由和首页 · `study.js` 精听、复习、今日学习 · `listen.js` 连续听、磨耳朵、词汇 · `edit.js` 改句子、查词 · `core.js` 播放器和公共状态
